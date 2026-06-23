@@ -16,6 +16,9 @@ build/
 *.iml
 .vscode/
 
+# Claude Code local session/memory
+.claude/
+
 # Local env / secrets
 .env
 .env.local
