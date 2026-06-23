@@ -1,0 +1,26 @@
+# External reference engine — re-clone from github.com/jeremiaspala/dtn-mesh
+/reference/
+
+# Dependencies / build output (nested .gitignores also cover these)
+node_modules/
+.next/
+out/
+build/
+.dart_tool/
+.gradle/
+*.apk
+*.aab
+
+# IDE / editor
+.idea/
+*.iml
+.vscode/
+
+# Local env / secrets
+.env
+.env.local
+*.local
+
+# OS
+.DS_Store
+Thumbs.db
