@@ -1,0 +1,41 @@
+@import "tailwindcss";
+
+/* ── Nest Link brand theme (charcoal canvas + emerald/teal accents) ── */
+@theme {
+  --color-canvas: #101316;
+  --color-canvas-2: #161a1e;
+  --color-panel: #1e2227;
+  --color-panel-2: #262b31;
+  --color-leaf: #2ecc71;
+  --color-leaf-dim: #1e7e4f;
+  --color-tide: #1abc9c;
+  --color-amber: #f1c40f;
+  --color-coral: #ff6b6b;
+  --color-ink: #eaf0f2;
+  --color-ink-dim: #8a949e;
+  --color-line: #2c3238;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+/* soft emerald glow used on mesh elements */
+.glow-leaf {
+  box-shadow: 0 0 24px -4px rgba(46, 204, 113, 0.45);
+}
+
+@keyframes sweep {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.radar-sweep {
+  animation: sweep 4s linear infinite;
+}
