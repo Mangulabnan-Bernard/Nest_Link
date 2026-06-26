@@ -1,7 +1,8 @@
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Stores who you are + maps mesh EIDs to friendly family names.
+/// Stores who you are, your family code, and maps mesh EIDs to friendly names.
 /// (Local only for now; Firebase-backed family accounts arrive in Sprint 4.)
 class Identity extends ChangeNotifier {
   Identity._();
@@ -9,21 +10,27 @@ class Identity extends ChangeNotifier {
 
   static const _kName = 'profile_name';
   static const _kRole = 'profile_role';
+  static const _kFamily = 'family_code';
   static const _kRegistryPrefix = 'eid_name_';
 
   SharedPreferences? _prefs;
   String? _name;
   String _role = 'parent';
+  String? _familyCode;
   final Map<String, String> _registry = {}; // eid -> name
 
   String? get name => _name;
   String get role => _role;
-  bool get isSetUp => (_name ?? '').isNotEmpty;
+  String? get familyCode => _familyCode;
+
+  /// Setup is complete only when we know who you are AND which family you're in.
+  bool get isSetUp => (_name ?? '').isNotEmpty && (_familyCode ?? '').isNotEmpty;
 
   Future<void> load() async {
     final p = _prefs = await SharedPreferences.getInstance();
     _name = p.getString(_kName);
     _role = p.getString(_kRole) ?? 'parent';
+    _familyCode = p.getString(_kFamily);
     for (final key in p.getKeys()) {
       if (key.startsWith(_kRegistryPrefix)) {
         _registry[key.substring(_kRegistryPrefix.length)] = p.getString(key) ?? '';
@@ -37,6 +44,29 @@ class Identity extends ChangeNotifier {
     _role = role;
     await _prefs?.setString(_kName, _name!);
     await _prefs?.setString(_kRole, role);
+    notifyListeners();
+  }
+
+  /// Create a brand-new family and return its shareable code (e.g. NEST-7XK2).
+  Future<String> createFamily() async {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    final r = Random();
+    final code = 'NEST-${List.generate(4, (_) => chars[r.nextInt(chars.length)]).join()}';
+    await _setFamily(code);
+    return code;
+  }
+
+  /// Join an existing family by its code. Normalizes to NEST-XXXX form.
+  Future<void> joinFamily(String raw) async {
+    var c = raw.trim().toUpperCase().replaceAll(' ', '');
+    if (c.isEmpty) return;
+    if (!c.startsWith('NEST-')) c = 'NEST-$c';
+    await _setFamily(c);
+  }
+
+  Future<void> _setFamily(String code) async {
+    _familyCode = code;
+    await _prefs?.setString(_kFamily, code);
     notifyListeners();
   }
 

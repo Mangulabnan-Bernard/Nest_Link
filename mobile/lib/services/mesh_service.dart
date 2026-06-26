@@ -87,6 +87,11 @@ class MeshService extends ChangeNotifier {
     _running = true;
     _sub ??= _events.receiveBroadcastStream().listen(_onEvent);
 
+    // Tell the native service my family code so notifications only fire for my family.
+    try {
+      await _method.invokeMethod('setFamilyCode', {'code': Identity.instance.familyCode ?? ''});
+    } catch (_) {}
+
     // Broadcast my GPS to the family every 20s so they appear on each other's map.
     _locTimer ??= Timer.periodic(const Duration(seconds: 20), (_) => _broadcastLocation());
     _broadcastLocation();
@@ -99,6 +104,14 @@ class MeshService extends ChangeNotifier {
         break;
       }
     }
+    notifyListeners();
+  }
+
+  /// Re-send my (possibly changed) family code to the native engine.
+  Future<void> syncFamilyCode() async {
+    try {
+      await _method.invokeMethod('setFamilyCode', {'code': Identity.instance.familyCode ?? ''});
+    } catch (_) {}
     notifyListeners();
   }
 
@@ -122,7 +135,8 @@ class MeshService extends ChangeNotifier {
       if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) return;
       final pos = await Geolocator.getCurrentPosition();
       final name = Identity.instance.name ?? 'You';
-      final payload = MeshEnvelope.location(name, pos.latitude, pos.longitude);
+      final family = Identity.instance.familyCode ?? '';
+      final payload = MeshEnvelope.location(family, name, pos.latitude, pos.longitude);
       await _method.invokeMethod('sendText', {'text': payload, 'destEid': 'broadcast'});
     } catch (_) {
       // location unavailable — skip this round
@@ -135,6 +149,13 @@ class MeshService extends ChangeNotifier {
     final hops = (m['hopCount'] as num?)?.toInt() ?? 0;
     final env = MeshEnvelope.decode(m['text']?.toString() ?? '');
 
+    // Privacy: ignore traffic that isn't from my family (the phone still relays
+    // it for others, it just won't be shown here).
+    final myFamily = Identity.instance.familyCode ?? '';
+    if (env.familyCode.isNotEmpty && myFamily.isNotEmpty && env.familyCode != myFamily) {
+      return;
+    }
+
     // learn the sender's name from the envelope (registry rename still wins)
     if (env.senderName.isNotEmpty && !Identity.instance.isKnown(sourceEid)) {
       _touchPresence(sourceEid, env.senderName, null);
@@ -142,6 +163,9 @@ class MeshService extends ChangeNotifier {
 
     switch (env.kind) {
       case MeshKind.chat:
+        // Guard: never show an empty/garbled chat bubble (e.g. a stray packet
+        // from a mismatched build, or a non-chat payload).
+        if (env.text.trim().isEmpty) break;
         _messages.add(MeshMessage(
           id: m['id']?.toString() ?? '',
           sourceEid: sourceEid,
@@ -211,7 +235,8 @@ class MeshService extends ChangeNotifier {
     _saveHistory();
     notifyListeners();
 
-    final payload = MeshEnvelope.chat(name, text);
+    final family = Identity.instance.familyCode ?? '';
+    final payload = MeshEnvelope.chat(family, name, text);
     try {
       await _method.invokeMethod('sendText', {'text': payload, 'destEid': 'broadcast'});
     } catch (_) {
@@ -226,16 +251,19 @@ class MeshService extends ChangeNotifier {
     for (final s in raw) {
       try {
         final m = jsonDecode(s) as Map;
+        final text = m['t']?.toString() ?? '';
+        if (text.trim().isEmpty) continue; // drop old blank/garbled entries
         _messages.add(MeshMessage(
           id: m['id']?.toString() ?? '',
           sourceEid: m['s']?.toString() ?? '',
           senderName: m['n']?.toString() ?? '',
-          text: m['t']?.toString() ?? '',
+          text: text,
           hopCount: 0,
           viaMesh: m['v'] == true,
         ));
       } catch (_) {}
     }
+    _saveHistory(); // persist the cleaned list
     if (_messages.isNotEmpty) notifyListeners();
   }
 
@@ -255,7 +283,8 @@ class MeshService extends ChangeNotifier {
   Future<void> sendStatus(String status) async {
     if (!_running) return;
     final name = Identity.instance.name ?? 'You';
-    final payload = MeshEnvelope.statusUpdate(name, status);
+    final family = Identity.instance.familyCode ?? '';
+    final payload = MeshEnvelope.statusUpdate(family, name, status);
     await _method.invokeMethod('sendText', {'text': payload, 'destEid': 'broadcast'});
   }
 
