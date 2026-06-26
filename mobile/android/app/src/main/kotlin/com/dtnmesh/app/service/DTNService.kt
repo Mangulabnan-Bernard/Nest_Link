@@ -206,11 +206,14 @@ class DTNService : LifecycleService() {
         if (stored) {
             _receivedBundles.emit(bundleToStore)
             updateNotification("Bundle recibido de $fromPeer")
-            // Only notify for real chats/audio — silence background GPS/status packets.
+            // Only notify for real chats/audio from MY family — silence GPS/status
+            // packets and other families' traffic.
+            val payloadText = String(bundleToStore.payload, Charsets.UTF_8)
             val isChat = bundleToStore.payloadType == PayloadType.AUDIO ||
-                (bundleToStore.payloadType == PayloadType.TEXT &&
-                    envelopeKind(String(bundleToStore.payload, Charsets.UTF_8)) == "chat")
-            if (isForUs && isChat) showMessageNotification(bundleToStore)
+                (bundleToStore.payloadType == PayloadType.TEXT && envelopeKind(payloadText) == "chat")
+            val fam = envelopeFamily(payloadText)
+            val sameFamily = familyCode.isEmpty() || fam.isEmpty() || fam == familyCode
+            if (isForUs && isChat && sameFamily) showMessageNotification(bundleToStore)
             if (bundleToStore.payloadType == PayloadType.ACK) {
                 bundleManager.processAck(bundleToStore)
             } else if (isForUs) {
@@ -266,10 +269,18 @@ class DTNService : LifecycleService() {
         nm.notify(NOTIF_MSG_BASE_ID + peerEid.hashCode() % 100, notif)
     }
 
+    /** Family code of the local user — notifications only fire for matching traffic. */
+    @Volatile var familyCode: String = ""
+
     /** Reads the Nest Link envelope kind ("chat" / "status" / "loc"); defaults to chat. */
     private fun envelopeKind(text: String): String = try {
         org.json.JSONObject(text).optString("k", "chat")
     } catch (e: Exception) { "chat" }
+
+    /** Reads the family code ("f") from an envelope; empty if absent/legacy. */
+    private fun envelopeFamily(text: String): String = try {
+        org.json.JSONObject(text).optString("f", "")
+    } catch (e: Exception) { "" }
 
     /** Human-readable chat text from a Nest Link envelope ("Name: message"). */
     private fun envelopeChatText(text: String): String = try {

@@ -42,11 +42,13 @@ class MainActivity : FlutterActivity() {
     private var bound = false
     private var eventSink: EventChannel.EventSink? = null
     private var collectJob: Job? = null
+    private var familyCode: String = ""
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             val local = binder as? DTNService.LocalBinder ?: return
             dtnService = local.getService()
+            dtnService?.familyCode = familyCode
             bound = true
             startCollecting()
         }
@@ -82,6 +84,12 @@ class MainActivity : FlutterActivity() {
                     collectJob = null
                     DTNService.stop(this)
                     dtnService = null
+                    result.success(true)
+                }
+
+                "setFamilyCode" -> {
+                    familyCode = call.argument<String>("code") ?: ""
+                    dtnService?.familyCode = familyCode
                     result.success(true)
                 }
 
