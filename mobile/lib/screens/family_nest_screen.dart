@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../theme.dart';
 import '../services/mesh_service.dart';
 import '../services/identity.dart';
@@ -15,6 +16,7 @@ class _FamilyNestScreenState extends State<FamilyNestScreen> {
   final _mesh = MeshService.instance;
   final _id = Identity.instance;
   final _controller = TextEditingController();
+  final _scroll = ScrollController();
 
   @override
   void initState() {
@@ -26,7 +28,17 @@ class _FamilyNestScreenState extends State<FamilyNestScreen> {
   @override
   void dispose() {
     _controller.dispose();
+    _scroll.dispose();
     super.dispose();
+  }
+
+  /// Keep the newest message in view (like a normal chat).
+  void _jumpToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scroll.hasClients) {
+        _scroll.jumpTo(_scroll.position.maxScrollExtent);
+      }
+    });
   }
 
   Future<void> _send() async {
@@ -34,6 +46,101 @@ class _FamilyNestScreenState extends State<FamilyNestScreen> {
     if (t.isEmpty) return;
     await _mesh.sendChat(t);
     _controller.clear();
+  }
+
+  void _showFamilyCode() {
+    final joinController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (dialogCtx, setLocal) {
+          final code = _id.familyCode ?? '—';
+          return AlertDialog(
+            backgroundColor: Brand.surface,
+            title: const Text('Family'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text('Your family code (share to invite):',
+                    style: TextStyle(color: Brand.textDim, fontSize: 13)),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    SelectableText(code,
+                        style: const TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: Brand.emerald,
+                            letterSpacing: 2)),
+                    IconButton(
+                      icon: const Icon(Icons.copy, size: 18),
+                      onPressed: () {
+                        Clipboard.setData(ClipboardData(text: code));
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                            content: Text('Copied'), duration: Duration(seconds: 1)));
+                      },
+                    ),
+                  ],
+                ),
+                const Divider(height: 24),
+
+                // Create a brand-new family
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final newCode = await _id.createFamily();
+                    await _mesh.syncFamilyCode();
+                    setLocal(() {});
+                    if (mounted) setState(() {});
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text('New family created: $newCode'),
+                        duration: const Duration(seconds: 2)));
+                  },
+                  style: OutlinedButton.styleFrom(side: const BorderSide(color: Brand.emerald)),
+                  icon: const Icon(Icons.add_home, size: 18),
+                  label: const Text('Create a new family'),
+                ),
+                const SizedBox(height: 12),
+
+                // Join a different family
+                TextField(
+                  controller: joinController,
+                  textCapitalization: TextCapitalization.characters,
+                  decoration: const InputDecoration(
+                    hintText: 'Enter a code to join…',
+                    isDense: true,
+                    filled: true,
+                    fillColor: Brand.charcoalHi,
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                FilledButton.icon(
+                  onPressed: () async {
+                    if (joinController.text.trim().isEmpty) return;
+                    await _id.joinFamily(joinController.text);
+                    await _mesh.syncFamilyCode();
+                    setLocal(() {});
+                    if (mounted) setState(() {});
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text('Joined family ${_id.familyCode}'),
+                        duration: const Duration(seconds: 2)));
+                  },
+                  style: FilledButton.styleFrom(
+                      backgroundColor: Brand.teal, foregroundColor: Brand.charcoal),
+                  icon: const Icon(Icons.group_add, size: 18),
+                  label: const Text('Join with code'),
+                ),
+              ],
+            ),
+            actions: [
+              FilledButton(onPressed: () => Navigator.pop(dialogCtx), child: const Text('Close')),
+            ],
+          );
+        },
+      ),
+    );
   }
 
   Future<void> _renameSender(String eid) async {
@@ -78,6 +185,11 @@ class _FamilyNestScreenState extends State<FamilyNestScreen> {
           ],
         ),
         actions: [
+          IconButton(
+            tooltip: 'Family code',
+            icon: const Icon(Icons.group, size: 20),
+            onPressed: _showFamilyCode,
+          ),
           AnimatedBuilder(
             animation: _mesh,
             builder: (_, _) {
@@ -109,13 +221,16 @@ class _FamilyNestScreenState extends State<FamilyNestScreen> {
       ),
       body: Column(
         children: [
+          _connectedBar(),
           Expanded(
             child: AnimatedBuilder(
               animation: _mesh,
               builder: (context, _) {
                 final msgs = _mesh.messages;
                 if (msgs.isEmpty) return _empty();
+                _jumpToBottom(); // stick to the newest message
                 return ListView.builder(
+                  controller: _scroll,
                   padding: const EdgeInsets.all(12),
                   itemCount: msgs.length,
                   itemBuilder: (context, i) => _bubble(msgs[i]),
@@ -126,6 +241,48 @@ class _FamilyNestScreenState extends State<FamilyNestScreen> {
           _composer(),
         ],
       ),
+    );
+  }
+
+  Widget _connectedBar() {
+    return AnimatedBuilder(
+      animation: _mesh,
+      builder: (context, _) {
+        final live = _mesh.presence;
+        final names = live
+            .map((p) => _id.isKnown(p.eid) ? _id.nameForEid(p.eid) : p.name)
+            .toList();
+        final hasFamily = names.isNotEmpty;
+        return Container(
+          width: double.infinity,
+          color: hasFamily ? Brand.emeraldDim.withValues(alpha: 0.25) : Brand.surface,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          child: Row(
+            children: [
+              Icon(hasFamily ? Icons.group : Icons.search,
+                  size: 15, color: hasFamily ? Brand.emerald : Brand.textDim),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  hasFamily
+                      ? 'Connected: ${names.join(", ")}'
+                      : (_mesh.running
+                          ? 'Searching for family nearby…'
+                          : 'Mesh off'),
+                  style: TextStyle(
+                      fontSize: 12.5,
+                      color: hasFamily ? Brand.emerald : Brand.textDim,
+                      fontWeight: hasFamily ? FontWeight.w600 : FontWeight.normal),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (hasFamily)
+                Text('${names.length} nearby',
+                    style: const TextStyle(fontSize: 11, color: Brand.textDim)),
+            ],
+          ),
+        );
+      },
     );
   }
 

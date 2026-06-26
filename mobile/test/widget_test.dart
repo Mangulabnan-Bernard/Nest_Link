@@ -11,6 +11,7 @@ void main() {
     SharedPreferences.setMockInitialValues({
       'profile_name': 'Tatay',
       'profile_role': 'parent',
+      'family_code': 'NEST-TEST',
     });
     await Identity.instance.load();
 
