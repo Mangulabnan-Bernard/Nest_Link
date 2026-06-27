@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -6,6 +7,7 @@ import 'package:latlong2/latlong.dart';
 import '../theme.dart';
 import '../mock_data.dart';
 import '../services/mesh_service.dart';
+import '../services/offline_tiles.dart';
 
 /// Online Nest Mat — a real OpenStreetMap with family GPS pins.
 /// Defaults to the Philippines (Manila) until a live location is resolved.
@@ -22,11 +24,15 @@ class _MapViewState extends State<MapView> {
   LatLng _center = _manila;
   LatLng? _me;
   String _note = 'Locating…';
+  Directory? _tileDir;
 
   @override
   void initState() {
     super.initState();
     _locate();
+    TileCache.instance.ensureDir().then((d) {
+      if (mounted) setState(() => _tileDir = d);
+    });
   }
 
   Future<void> _locate() async {
@@ -78,8 +84,9 @@ class _MapViewState extends State<MapView> {
           options: MapOptions(initialCenter: _center, initialZoom: 14),
           children: [
             TileLayer(
-              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              urlTemplate: tileUrlTemplate,
               userAgentPackageName: 'com.example.nest_link',
+              tileProvider: _tileDir != null ? CachedTileProvider(_tileDir!) : null,
             ),
             AnimatedBuilder(
               animation: MeshService.instance,
@@ -126,11 +133,71 @@ class _MapViewState extends State<MapView> {
         const Positioned(
           right: 6,
           bottom: 4,
-          child: Text('© OpenStreetMap',
+          child: Text('© OpenStreetMap, © CARTO',
               style: TextStyle(fontSize: 9, color: Brand.textDim)),
+        ),
+        Positioned(
+          right: 12,
+          bottom: 18,
+          child: FloatingActionButton.extended(
+            heroTag: 'saveArea',
+            backgroundColor: Brand.surface,
+            foregroundColor: Brand.emerald,
+            onPressed: _tileDir == null ? null : _downloadArea,
+            icon: const Icon(Icons.download_for_offline, size: 18),
+            label: const Text('Save area', style: TextStyle(fontSize: 13)),
+          ),
         ),
       ],
     );
+  }
+
+  /// Pre-download the current view (+1 zoom level) so it works offline.
+  Future<void> _downloadArea() async {
+    final cam = _controller.camera;
+    final bounds = cam.visibleBounds;
+    final zMin = cam.zoom.floor().clamp(3, 17);
+    final zMax = (zMin + 1).clamp(3, 18);
+    final total = TileCache.instance.countTiles(bounds, zMin, zMax);
+    final progress = ValueNotifier<int>(0);
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        backgroundColor: Brand.surface,
+        title: const Text('Saving map for offline'),
+        content: ValueListenableBuilder<int>(
+          valueListenable: progress,
+          builder: (_, done, _) => Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Downloading this area so the map works with no internet…',
+                  style: TextStyle(color: Brand.textDim, fontSize: 13)),
+              const SizedBox(height: 16),
+              LinearProgressIndicator(
+                value: total == 0 ? null : done / total,
+                backgroundColor: Brand.charcoalHi,
+                valueColor: const AlwaysStoppedAnimation(Brand.emerald),
+              ),
+              const SizedBox(height: 8),
+              Text('$done / ${total > 1200 ? 1200 : total} tiles',
+                  style: const TextStyle(color: Brand.textDim, fontSize: 12)),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    await TileCache.instance.downloadArea(bounds, zMin, zMax,
+        onProgress: (done, _) => progress.value = done);
+
+    if (!mounted) return;
+    Navigator.of(context).pop();
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text('Saved! This area now works offline.'),
+      duration: Duration(seconds: 2),
+    ));
   }
 
   Color _colorFor(String eid) {
