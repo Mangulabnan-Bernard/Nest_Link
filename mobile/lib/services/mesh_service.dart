@@ -15,8 +15,11 @@ class MeshMessage {
   final String senderName;
   final String text;
   final String destEid; // 'broadcast' (Family Nest) or a peer EID (private)
+  final String? audioB64; // set when this is a voice message (this session)
   final int hopCount;
   final bool viaMesh; // received over the mesh (vs. locally echoed)
+
+  bool get isVoice => audioB64 != null || text == '🎙️ Voice message';
 
   const MeshMessage({
     required this.id,
@@ -24,6 +27,7 @@ class MeshMessage {
     required this.senderName,
     required this.text,
     this.destEid = 'broadcast',
+    this.audioB64,
     required this.hopCount,
     required this.viaMesh,
   });
@@ -203,6 +207,20 @@ class MeshService extends ChangeNotifier {
         ));
         _saveHistory();
         break;
+      case MeshKind.voice:
+        if (env.audioB64.isEmpty) break;
+        _messages.add(MeshMessage(
+          id: m['id']?.toString() ?? '',
+          sourceEid: sourceEid,
+          senderName: _displayName(sourceEid, env.senderName),
+          text: '🎙️ Voice message',
+          destEid: m['destEid']?.toString() ?? 'broadcast',
+          audioB64: env.audioB64,
+          hopCount: hops,
+          viaMesh: true,
+        ));
+        _saveHistory();
+        break;
       case MeshKind.status:
         _touchPresence(sourceEid, env.senderName, env.status);
         break;
@@ -271,6 +289,29 @@ class MeshService extends ChangeNotifier {
     } catch (_) {
       // engine not ready — bubble already shown; it will resend on next contact
     }
+  }
+
+  /// Send a voice clip (base64) — to the family (broadcast) or one peer.
+  Future<void> sendVoice(String base64Audio, {String destEid = 'broadcast'}) async {
+    if (!_running || base64Audio.isEmpty) return;
+    final name = Identity.instance.name ?? 'You';
+    final family = Identity.instance.familyCode ?? '';
+    _messages.add(MeshMessage(
+      id: 'local-${DateTime.now().millisecondsSinceEpoch}',
+      sourceEid: 'me',
+      senderName: name,
+      text: '🎙️ Voice message',
+      destEid: destEid,
+      audioB64: base64Audio,
+      hopCount: 0,
+      viaMesh: false,
+    ));
+    _saveHistory();
+    notifyListeners();
+    final payload = MeshEnvelope.voice(family, name, base64Audio);
+    try {
+      await _method.invokeMethod('sendText', {'text': payload, 'destEid': destEid});
+    } catch (_) {}
   }
 
   /// Send a private chat directly to one peer (1-on-1, not the whole family).

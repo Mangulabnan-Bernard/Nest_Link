@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme.dart';
 import '../services/mesh_service.dart';
 import '../services/identity.dart';
+import '../services/voice.dart';
 
 /// A real 1-on-1 private chat with a single family member (unicast over mesh).
 class PrivateChatScreen extends StatefulWidget {
@@ -16,8 +17,10 @@ class PrivateChatScreen extends StatefulWidget {
 class _PrivateChatScreenState extends State<PrivateChatScreen> {
   final _mesh = MeshService.instance;
   final _id = Identity.instance;
+  final _voice = Voice.instance;
   final _controller = TextEditingController();
   final _scroll = ScrollController();
+  bool _recording = false;
 
   @override
   void dispose() {
@@ -31,6 +34,36 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
     if (t.isEmpty) return;
     await _mesh.sendChatTo(widget.peerEid, t);
     _controller.clear();
+  }
+
+  Future<void> _startRecord() async {
+    final ok = await _voice.start();
+    if (!ok) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Microphone permission needed')));
+      }
+      return;
+    }
+    setState(() => _recording = true);
+  }
+
+  Future<void> _stopAndSendVoice() async {
+    setState(() => _recording = false);
+    final b64 = await _voice.stopAsBase64();
+    if (b64 == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Recording too short')));
+      }
+      return;
+    }
+    await _mesh.sendVoice(b64, destEid: widget.peerEid);
+  }
+
+  Future<void> _cancelRecord() async {
+    setState(() => _recording = false);
+    await _voice.cancel();
   }
 
   void _jumpToBottom() {
@@ -125,7 +158,7 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(m.text, style: const TextStyle(color: Brand.text)),
+            if (m.isVoice) _voiceContent(m) else Text(m.text, style: const TextStyle(color: Brand.text)),
             const SizedBox(height: 4),
             Row(mainAxisSize: MainAxisSize.min, children: [
               if (m.viaMesh) ...[
@@ -142,38 +175,66 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
     );
   }
 
+  Widget _voiceContent(MeshMessage m) {
+    final canPlay = m.audioB64 != null;
+    return InkWell(
+      onTap: canPlay ? () => _voice.play(m.audioB64!) : null,
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(canPlay ? Icons.play_circle_fill : Icons.mic,
+            color: canPlay ? Brand.text : Brand.textDim, size: 26),
+        const SizedBox(width: 8),
+        Text(canPlay ? 'Voice message · tap to play' : 'Voice message',
+            style: const TextStyle(color: Brand.text)),
+      ]),
+    );
+  }
+
   Widget _composer() {
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+      padding: const EdgeInsets.fromLTRB(8, 8, 12, 12),
       color: Brand.charcoalHi,
       child: SafeArea(
         top: false,
-        child: Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _controller,
-                decoration: InputDecoration(
-                  hintText: 'Message $_name…',
-                  filled: true,
-                  fillColor: Brand.surface,
-                  isDense: true,
-                  border: const OutlineInputBorder(
-                      borderRadius: BorderRadius.all(Radius.circular(24)), borderSide: BorderSide.none),
+        child: _recording
+            ? Row(children: [
+                const SizedBox(width: 8),
+                const Icon(Icons.fiber_manual_record, color: Brand.coral, size: 16),
+                const SizedBox(width: 8),
+                const Expanded(
+                    child: Text('Recording… send or cancel', style: TextStyle(color: Brand.coral))),
+                TextButton(onPressed: _cancelRecord, child: const Text('Cancel')),
+                const SizedBox(width: 4),
+                CircleAvatar(
+                  backgroundColor: Brand.emerald,
+                  child: IconButton(
+                      icon: const Icon(Icons.send, color: Brand.charcoal), onPressed: _stopAndSendVoice),
                 ),
-                onSubmitted: (_) => _send(),
-              ),
-            ),
-            const SizedBox(width: 8),
-            CircleAvatar(
-              backgroundColor: Brand.emerald,
-              child: IconButton(
-                icon: const Icon(Icons.send, color: Brand.charcoal),
-                onPressed: _send,
-              ),
-            ),
-          ],
-        ),
+              ])
+            : Row(children: [
+                IconButton(
+                    icon: const Icon(Icons.mic, color: Brand.textDim), onPressed: _startRecord),
+                Expanded(
+                  child: TextField(
+                    controller: _controller,
+                    decoration: InputDecoration(
+                      hintText: 'Message $_name…',
+                      filled: true,
+                      fillColor: Brand.surface,
+                      isDense: true,
+                      border: const OutlineInputBorder(
+                          borderRadius: BorderRadius.all(Radius.circular(24)),
+                          borderSide: BorderSide.none),
+                    ),
+                    onSubmitted: (_) => _send(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                CircleAvatar(
+                  backgroundColor: Brand.emerald,
+                  child: IconButton(
+                      icon: const Icon(Icons.send, color: Brand.charcoal), onPressed: _send),
+                ),
+              ]),
       ),
     );
   }

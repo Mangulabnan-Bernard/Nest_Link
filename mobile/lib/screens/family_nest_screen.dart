@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../theme.dart';
 import '../services/mesh_service.dart';
 import '../services/identity.dart';
+import '../services/voice.dart';
 
 /// The real Family Nest broadcast thread — live over the dtn-mesh engine.
 class FamilyNestScreen extends StatefulWidget {
@@ -15,11 +16,37 @@ class FamilyNestScreen extends StatefulWidget {
 class _FamilyNestScreenState extends State<FamilyNestScreen> {
   final _mesh = MeshService.instance;
   final _id = Identity.instance;
+  final _voice = Voice.instance;
   final _controller = TextEditingController();
   final _scroll = ScrollController();
 
   Set<String> _prevReachable = {};
   bool _baselineSet = false;
+  bool _recording = false;
+
+  Future<void> _startRecord() async {
+    final ok = await _voice.start();
+    if (!ok) {
+      _toast('Microphone permission needed', Brand.coral, Icons.mic_off);
+      return;
+    }
+    setState(() => _recording = true);
+  }
+
+  Future<void> _stopAndSendVoice() async {
+    setState(() => _recording = false);
+    final b64 = await _voice.stopAsBase64();
+    if (b64 == null) {
+      if (mounted) _toast('Recording too short', Brand.amber, Icons.mic_off);
+      return;
+    }
+    await _mesh.sendVoice(b64);
+  }
+
+  Future<void> _cancelRecord() async {
+    setState(() => _recording = false);
+    await _voice.cancel();
+  }
 
   @override
   void initState() {
@@ -435,7 +462,7 @@ class _FamilyNestScreenState extends State<FamilyNestScreen> {
                   ],
                 ),
               ),
-            Text(m.text, style: const TextStyle(color: Brand.text)),
+            if (m.isVoice) _voiceContent(m) else Text(m.text, style: const TextStyle(color: Brand.text)),
             const SizedBox(height: 4),
             Row(
               mainAxisSize: MainAxisSize.min,
@@ -457,39 +484,66 @@ class _FamilyNestScreenState extends State<FamilyNestScreen> {
     );
   }
 
+  Widget _voiceContent(MeshMessage m) {
+    final canPlay = m.audioB64 != null;
+    return InkWell(
+      onTap: canPlay ? () => _voice.play(m.audioB64!) : null,
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(canPlay ? Icons.play_circle_fill : Icons.mic,
+            color: canPlay ? Brand.text : Brand.textDim, size: 26),
+        const SizedBox(width: 8),
+        Text(canPlay ? 'Voice message · tap to play' : 'Voice message',
+            style: const TextStyle(color: Brand.text)),
+      ]),
+    );
+  }
+
   Widget _composer() {
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+      padding: const EdgeInsets.fromLTRB(8, 8, 12, 12),
       color: Brand.charcoalHi,
       child: SafeArea(
         top: false,
-        child: Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _controller,
-                decoration: const InputDecoration(
-                  hintText: 'Send a chirp to the family…',
-                  filled: true,
-                  fillColor: Brand.surface,
-                  isDense: true,
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.all(Radius.circular(24)),
-                      borderSide: BorderSide.none),
+        child: _recording
+            ? Row(children: [
+                const SizedBox(width: 8),
+                const Icon(Icons.fiber_manual_record, color: Brand.coral, size: 16),
+                const SizedBox(width: 8),
+                const Expanded(
+                    child: Text('Recording… send or cancel', style: TextStyle(color: Brand.coral))),
+                TextButton(onPressed: _cancelRecord, child: const Text('Cancel')),
+                const SizedBox(width: 4),
+                CircleAvatar(
+                  backgroundColor: Brand.emerald,
+                  child: IconButton(
+                      icon: const Icon(Icons.send, color: Brand.charcoal), onPressed: _stopAndSendVoice),
                 ),
-                onSubmitted: (_) => _send(),
-              ),
-            ),
-            const SizedBox(width: 8),
-            CircleAvatar(
-              backgroundColor: Brand.emerald,
-              child: IconButton(
-                icon: const Icon(Icons.send, color: Brand.charcoal),
-                onPressed: _send,
-              ),
-            ),
-          ],
-        ),
+              ])
+            : Row(children: [
+                IconButton(
+                    icon: const Icon(Icons.mic, color: Brand.textDim), onPressed: _startRecord),
+                Expanded(
+                  child: TextField(
+                    controller: _controller,
+                    decoration: const InputDecoration(
+                      hintText: 'Send a chirp to the family…',
+                      filled: true,
+                      fillColor: Brand.surface,
+                      isDense: true,
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.all(Radius.circular(24)),
+                          borderSide: BorderSide.none),
+                    ),
+                    onSubmitted: (_) => _send(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                CircleAvatar(
+                  backgroundColor: Brand.emerald,
+                  child: IconButton(
+                      icon: const Icon(Icons.send, color: Brand.charcoal), onPressed: _send),
+                ),
+              ]),
       ),
     );
   }

@@ -209,8 +209,9 @@ class DTNService : LifecycleService() {
             // Only notify for real chats/audio from MY family — silence GPS/status
             // packets and other families' traffic.
             val payloadText = String(bundleToStore.payload, Charsets.UTF_8)
+            val kind = envelopeKind(payloadText)
             val isChat = bundleToStore.payloadType == PayloadType.AUDIO ||
-                (bundleToStore.payloadType == PayloadType.TEXT && envelopeKind(payloadText) == "chat")
+                (bundleToStore.payloadType == PayloadType.TEXT && (kind == "chat" || kind == "voice"))
             val fam = envelopeFamily(payloadText)
             val sameFamily = familyCode.isEmpty() || fam.isEmpty() || fam == familyCode
             if (isForUs && isChat && sameFamily) showMessageNotification(bundleToStore)
@@ -286,8 +287,8 @@ class DTNService : LifecycleService() {
     private fun envelopeChatText(text: String): String = try {
         val o = org.json.JSONObject(text)
         val n = o.optString("n", "")
-        val t = o.optString("t", text)
-        if (n.isNotEmpty()) "$n: $t" else t
+        val body = if (o.optString("k", "chat") == "voice") "🎙️ Voice message" else o.optString("t", text)
+        if (n.isNotEmpty()) "$n: $body" else body
     } catch (e: Exception) { text }
 
     private fun createNotificationChannel() {

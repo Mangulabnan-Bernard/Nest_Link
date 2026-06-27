@@ -4,13 +4,14 @@ import 'dart:convert';
 /// type by JSON-encoding a small envelope. Every envelope carries the sender's
 /// family code ("f") so phones only show their own family's traffic.
 /// Unparseable payloads are treated as plain chat text (backward-compatible).
-enum MeshKind { chat, status, location, ping, unknown }
+enum MeshKind { chat, voice, status, location, ping, unknown }
 
 class MeshEnvelope {
   final MeshKind kind;
   final String familyCode; // which family this belongs to
   final String senderName; // sender's chosen display name
   final String text; // chat body
+  final String audioB64; // voice clip (base64)
   final String status; // Safe Flight status label
   final double? lat;
   final double? lng;
@@ -20,6 +21,7 @@ class MeshEnvelope {
     this.familyCode = '',
     this.senderName = '',
     this.text = '',
+    this.audioB64 = '',
     this.status = '',
     this.lat,
     this.lng,
@@ -27,6 +29,9 @@ class MeshEnvelope {
 
   static String chat(String family, String senderName, String text) =>
       jsonEncode({'f': family, 'k': 'chat', 'n': senderName, 't': text});
+
+  static String voice(String family, String senderName, String base64Audio) =>
+      jsonEncode({'f': family, 'k': 'voice', 'n': senderName, 'a': base64Audio});
 
   static String statusUpdate(String family, String senderName, String status) =>
       jsonEncode({'f': family, 'k': 'status', 'n': senderName, 's': status});
@@ -49,6 +54,9 @@ class MeshEnvelope {
         case 'chat':
           return MeshEnvelope(
               kind: MeshKind.chat, familyCode: family, senderName: name, text: m['t']?.toString() ?? '');
+        case 'voice':
+          return MeshEnvelope(
+              kind: MeshKind.voice, familyCode: family, senderName: name, audioB64: m['a']?.toString() ?? '');
         case 'status':
           return MeshEnvelope(
               kind: MeshKind.status, familyCode: family, senderName: name, status: m['s']?.toString() ?? '');
