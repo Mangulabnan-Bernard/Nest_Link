@@ -46,6 +46,14 @@ dependencies:
   latlong2: ^0.9.1
   geolocator: ^13.0.1
 
+  # Offline maps: cache OSM tiles on disk so the map works with no internet
+  http: ^1.2.2
+  path_provider: ^2.1.4
+
+  # Voice messages over the mesh (record + play)
+  record: ^6.0.0
+  audioplayers: ^6.1.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
