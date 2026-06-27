@@ -59,6 +59,8 @@ class MeshService extends ChangeNotifier {
   String? _eid;
   StreamSubscription? _sub;
   Timer? _locTimer;
+  Timer? _pingTimer;
+  Timer? _refreshTimer;
   SharedPreferences? _prefs;
   static const _kHistory = 'chat_history';
 
@@ -96,6 +98,13 @@ class MeshService extends ChangeNotifier {
     _locTimer ??= Timer.periodic(const Duration(seconds: 20), (_) => _broadcastLocation());
     _broadcastLocation();
 
+    // Lightweight heartbeat every 12s so we reliably know who's still reachable.
+    _pingTimer ??= Timer.periodic(const Duration(seconds: 12), (_) => _sendPing());
+    _sendPing();
+
+    // Tick the UI every 5s so signal/age indicators update even with no packets.
+    _refreshTimer ??= Timer.periodic(const Duration(seconds: 5), (_) => notifyListeners());
+
     for (var i = 0; i < 12; i++) {
       await Future.delayed(const Duration(milliseconds: 250));
       final eid = await _method.invokeMethod<String>('getLocalEid').catchError((_) => null);
@@ -119,6 +128,10 @@ class MeshService extends ChangeNotifier {
     if (!_running) return;
     _locTimer?.cancel();
     _locTimer = null;
+    _pingTimer?.cancel();
+    _pingTimer = null;
+    _refreshTimer?.cancel();
+    _refreshTimer = null;
     await _method.invokeMethod('stop');
     _running = false;
     _eid = null;
@@ -187,6 +200,7 @@ class MeshService extends ChangeNotifier {
           p?.lng = env.lng;
         }
         break;
+      case MeshKind.ping:
       case MeshKind.unknown:
         _touchPresence(sourceEid, env.senderName, null);
         break;
@@ -279,6 +293,29 @@ class MeshService extends ChangeNotifier {
     _prefs?.setStringList(_kHistory, raw);
   }
 
+  /// Broadcast a tiny heartbeat so the family knows I'm still reachable.
+  Future<void> _sendPing() async {
+    if (!_running) return;
+    final name = Identity.instance.name ?? 'You';
+    final family = Identity.instance.familyCode ?? '';
+    try {
+      await _method.invokeMethod('sendText', {'text': MeshEnvelope.ping(family, name), 'destEid': 'broadcast'});
+    } catch (_) {}
+  }
+
+  /// Signal quality for a family member, from how recently we last heard them.
+  /// 'strong' (<25s) · 'weak' (<55s) · 'lost' (older).
+  static String qualityOf(MemberPresence p) {
+    final age = DateTime.now().millisecondsSinceEpoch - p.lastSeenMs;
+    if (age < 25000) return 'strong';
+    if (age < 55000) return 'weak';
+    return 'lost';
+  }
+
+  /// Members we currently consider reachable (heard within the last ~55s).
+  List<MemberPresence> get reachable =>
+      _presence.values.where((p) => qualityOf(p) != 'lost').toList();
+
   /// Broadcast my Safe Flight status to the family.
   Future<void> sendStatus(String status) async {
     if (!_running) return;
@@ -292,6 +329,8 @@ class MeshService extends ChangeNotifier {
   void dispose() {
     _sub?.cancel();
     _locTimer?.cancel();
+    _pingTimer?.cancel();
+    _refreshTimer?.cancel();
     super.dispose();
   }
 }

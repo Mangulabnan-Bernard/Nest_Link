@@ -18,18 +18,59 @@ class _FamilyNestScreenState extends State<FamilyNestScreen> {
   final _controller = TextEditingController();
   final _scroll = ScrollController();
 
+  Set<String> _prevReachable = {};
+  bool _baselineSet = false;
+
   @override
   void initState() {
     super.initState();
     // Ensure the mesh is running whenever the family thread is open.
     _mesh.start();
+    _mesh.addListener(_onMeshChange);
   }
 
   @override
   void dispose() {
+    _mesh.removeListener(_onMeshChange);
     _controller.dispose();
     _scroll.dispose();
     super.dispose();
+  }
+
+  String _nameFor(String eid) {
+    if (_id.isKnown(eid)) return _id.nameForEid(eid);
+    final match = _mesh.presence.where((p) => p.eid == eid);
+    return match.isNotEmpty ? match.first.name : 'A family member';
+  }
+
+  /// Toast when a family member connects or drops out of range.
+  void _onMeshChange() {
+    if (!mounted) return;
+    final now = _mesh.reachable.map((p) => p.eid).toSet();
+    if (!_baselineSet) {
+      _prevReachable = now;
+      _baselineSet = true;
+      return;
+    }
+    for (final eid in _prevReachable.difference(now)) {
+      _toast('${_nameFor(eid)} went out of range', Brand.amber, Icons.signal_wifi_off);
+    }
+    for (final eid in now.difference(_prevReachable)) {
+      _toast('${_nameFor(eid)} connected', Brand.emerald, Icons.wifi);
+    }
+    _prevReachable = now;
+  }
+
+  void _toast(String msg, Color color, IconData icon) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      backgroundColor: Brand.surfaceHi,
+      duration: const Duration(seconds: 2),
+      content: Row(children: [
+        Icon(icon, color: color, size: 18),
+        const SizedBox(width: 8),
+        Text(msg),
+      ]),
+    ));
   }
 
   /// Keep the newest message in view (like a normal chat).
@@ -91,8 +132,9 @@ class _FamilyNestScreenState extends State<FamilyNestScreen> {
                   onPressed: () async {
                     final newCode = await _id.createFamily();
                     await _mesh.syncFamilyCode();
+                    if (!mounted) return;
                     setLocal(() {});
-                    if (mounted) setState(() {});
+                    setState(() {});
                     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                         content: Text('New family created: $newCode'),
                         duration: const Duration(seconds: 2)));
@@ -121,8 +163,9 @@ class _FamilyNestScreenState extends State<FamilyNestScreen> {
                     if (joinController.text.trim().isEmpty) return;
                     await _id.joinFamily(joinController.text);
                     await _mesh.syncFamilyCode();
+                    if (!mounted) return;
                     setLocal(() {});
-                    if (mounted) setState(() {});
+                    setState(() {});
                     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                         content: Text('Joined family ${_id.familyCode}'),
                         duration: const Duration(seconds: 2)));
@@ -248,43 +291,79 @@ class _FamilyNestScreenState extends State<FamilyNestScreen> {
     return AnimatedBuilder(
       animation: _mesh,
       builder: (context, _) {
-        final live = _mesh.presence;
-        final names = live
-            .map((p) => _id.isKnown(p.eid) ? _id.nameForEid(p.eid) : p.name)
-            .toList();
-        final hasFamily = names.isNotEmpty;
-        return Container(
-          width: double.infinity,
-          color: hasFamily ? Brand.emeraldDim.withValues(alpha: 0.25) : Brand.surface,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          child: Row(
-            children: [
-              Icon(hasFamily ? Icons.group : Icons.search,
-                  size: 15, color: hasFamily ? Brand.emerald : Brand.textDim),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  hasFamily
-                      ? 'Connected: ${names.join(", ")}'
-                      : (_mesh.running
-                          ? 'Searching for family nearby…'
-                          : 'Mesh off'),
-                  style: TextStyle(
-                      fontSize: 12.5,
-                      color: hasFamily ? Brand.emerald : Brand.textDim,
-                      fontWeight: hasFamily ? FontWeight.w600 : FontWeight.normal),
-                  overflow: TextOverflow.ellipsis,
-                ),
+        if (!_mesh.running) {
+          return _bar(Brand.surface, Icons.hub, 'Mesh off', Brand.textDim);
+        }
+        final members = _mesh.reachable;
+        if (members.isEmpty) {
+          return _bar(Brand.surface, Icons.search, 'Searching for family nearby…', Brand.textDim);
+        }
+        final weak = members.where((p) => MeshService.qualityOf(p) == 'weak').toList();
+        return Column(
+          children: [
+            Container(
+              width: double.infinity,
+              color: Brand.emeraldDim.withValues(alpha: 0.22),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              child: Row(
+                children: [
+                  const Icon(Icons.group, size: 15, color: Brand.emerald),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Wrap(
+                      spacing: 12,
+                      runSpacing: 4,
+                      children: members.map((p) {
+                        final strong = MeshService.qualityOf(p) == 'strong';
+                        final c = strong ? Brand.emerald : Brand.amber;
+                        return Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(strong ? Icons.wifi : Icons.network_wifi_1_bar, size: 13, color: c),
+                            const SizedBox(width: 4),
+                            Text(_nameFor(p.eid),
+                                style: const TextStyle(
+                                    color: Brand.text, fontSize: 12.5, fontWeight: FontWeight.w600)),
+                          ],
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                  Text('${members.length} nearby',
+                      style: const TextStyle(fontSize: 11, color: Brand.textDim)),
+                ],
               ),
-              if (hasFamily)
-                Text('${names.length} nearby',
-                    style: const TextStyle(fontSize: 11, color: Brand.textDim)),
-            ],
-          ),
+            ),
+            for (final p in weak)
+              Container(
+                width: double.infinity,
+                color: Brand.amber.withValues(alpha: 0.14),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                child: Row(children: [
+                  const Icon(Icons.warning_amber, size: 14, color: Brand.amber),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text('${_nameFor(p.eid)}\'s signal is weak — may be moving away',
+                        style: const TextStyle(color: Brand.amber, fontSize: 11.5)),
+                  ),
+                ]),
+              ),
+          ],
         );
       },
     );
   }
+
+  Widget _bar(Color bg, IconData icon, String text, Color fg) => Container(
+        width: double.infinity,
+        color: bg,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        child: Row(children: [
+          Icon(icon, size: 15, color: fg),
+          const SizedBox(width: 8),
+          Text(text, style: TextStyle(fontSize: 12.5, color: fg)),
+        ]),
+      );
 
   Widget _empty() {
     return Center(

@@ -4,7 +4,7 @@ import 'dart:convert';
 /// type by JSON-encoding a small envelope. Every envelope carries the sender's
 /// family code ("f") so phones only show their own family's traffic.
 /// Unparseable payloads are treated as plain chat text (backward-compatible).
-enum MeshKind { chat, status, location, unknown }
+enum MeshKind { chat, status, location, ping, unknown }
 
 class MeshEnvelope {
   final MeshKind kind;
@@ -34,6 +34,10 @@ class MeshEnvelope {
   static String location(String family, String senderName, double lat, double lng) =>
       jsonEncode({'f': family, 'k': 'loc', 'n': senderName, 'lat': lat, 'lng': lng});
 
+  /// Lightweight "I'm here" heartbeat — keeps presence fresh without needing GPS.
+  static String ping(String family, String senderName) =>
+      jsonEncode({'f': family, 'k': 'ping', 'n': senderName});
+
   /// Decode a payload. Falls back to a chat envelope for raw / legacy text.
   static MeshEnvelope decode(String raw) {
     try {
@@ -56,6 +60,8 @@ class MeshEnvelope {
             lat: (m['lat'] as num?)?.toDouble(),
             lng: (m['lng'] as num?)?.toDouble(),
           );
+        case 'ping':
+          return MeshEnvelope(kind: MeshKind.ping, familyCode: family, senderName: name);
         default:
           return MeshEnvelope(kind: MeshKind.unknown, familyCode: family, senderName: name);
       }
