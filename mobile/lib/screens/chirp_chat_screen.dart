@@ -1,249 +1,136 @@
 import 'package:flutter/material.dart';
 import '../theme.dart';
-import '../mock_data.dart';
+import '../services/mesh_service.dart';
+import '../services/identity.dart';
 import 'family_nest_screen.dart';
+import 'private_chat_screen.dart';
 
-/// Chirp Chat — family-first messaging. Mesh-delivered chirps glimmer emerald
-/// with a nest icon.
-class ChirpChatScreen extends StatelessWidget {
+/// Chirp Chat — the Family Nest group thread plus a live list of nearby family
+/// you can message privately (1-on-1).
+class ChirpChatScreen extends StatefulWidget {
   const ChirpChatScreen({super.key});
+
+  @override
+  State<ChirpChatScreen> createState() => _ChirpChatScreenState();
+}
+
+class _ChirpChatScreenState extends State<ChirpChatScreen> {
+  final _mesh = MeshService.instance;
+  final _id = Identity.instance;
+
+  @override
+  void initState() {
+    super.initState();
+    _mesh.start(); // so nearby family appears even before opening a thread
+  }
+
+  String _nameFor(MemberPresence p) => _id.isKnown(p.eid) ? _id.nameForEid(p.eid) : p.name;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Chirp Chat')),
-      body: ListView.separated(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        itemCount: conversations.length,
-        separatorBuilder: (_, _) => const Divider(height: 1, indent: 76),
-        itemBuilder: (context, i) {
-          final c = conversations[i];
-          return ListTile(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            leading: CircleAvatar(
-              radius: 26,
-              backgroundColor: Brand.surfaceHi,
-              child: Icon(c.icon, color: Brand.emerald),
-            ),
-            title: Row(
-              children: [
-                Text(c.title, style: const TextStyle(fontWeight: FontWeight.w700)),
-                const SizedBox(width: 6),
-                if (c.id == 'fam')
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                    decoration: BoxDecoration(
-                        color: Brand.emerald.withValues(alpha: 0.16),
-                        borderRadius: BorderRadius.circular(8)),
-                    child: const Text('LIVE',
-                        style: TextStyle(
-                            color: Brand.emerald, fontSize: 9, fontWeight: FontWeight.bold)),
-                  )
-                else if (c.lastViaMesh)
-                  const Icon(Icons.hub, size: 14, color: Brand.emerald),
-              ],
-            ),
-            subtitle: Text(c.id == 'fam' ? 'Real mesh · tap to chirp' : c.preview,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Brand.textDim)),
-            trailing: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(c.time, style: const TextStyle(color: Brand.textDim, fontSize: 11)),
-                const SizedBox(height: 6),
-                if (c.unread > 0)
-                  Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: const BoxDecoration(
-                        color: Brand.emerald, shape: BoxShape.circle),
-                    child: Text('${c.unread}',
-                        style: const TextStyle(
-                            color: Brand.charcoal,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold)),
-                  ),
-              ],
-            ),
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => c.id == 'fam'
-                    ? const FamilyNestScreen()
-                    : ChatThreadScreen(conversation: c),
+      body: AnimatedBuilder(
+        animation: _mesh,
+        builder: (context, _) {
+          final nearby = _mesh.reachable;
+          return ListView(
+            children: [
+              // Group thread
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                leading: const CircleAvatar(
+                  radius: 26,
+                  backgroundColor: Brand.surfaceHi,
+                  child: Icon(Icons.diversity_3, color: Brand.emerald),
+                ),
+                title: Row(children: [
+                  const Text('Family Nest', style: TextStyle(fontWeight: FontWeight.w700)),
+                  const SizedBox(width: 6),
+                  _liveChip(),
+                ]),
+                subtitle: const Text('Group · everyone in your family',
+                    style: TextStyle(color: Brand.textDim)),
+                onTap: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const FamilyNestScreen())),
               ),
-            ),
+              const Divider(height: 1, indent: 76),
+
+              // Nearby family (private chats)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 18, 16, 8),
+                child: Row(children: [
+                  const Text('Nearby family',
+                      style: TextStyle(color: Brand.textDim, fontWeight: FontWeight.bold, fontSize: 13)),
+                  const SizedBox(width: 8),
+                  Text('${nearby.length} online',
+                      style: const TextStyle(color: Brand.textDim, fontSize: 12)),
+                ]),
+              ),
+
+              if (nearby.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Column(children: [
+                    Icon(Icons.search, color: Brand.textDim, size: 36),
+                    SizedBox(height: 8),
+                    Text(
+                      'No family nearby yet.\nThey appear here when in range.\nTap a person to chat them privately.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Brand.textDim),
+                    ),
+                  ]),
+                )
+              else
+                ...nearby.map((p) {
+                  final strong = MeshService.qualityOf(p) == 'strong';
+                  final name = _nameFor(p);
+                  return ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    leading: Stack(children: [
+                      CircleAvatar(
+                        radius: 24,
+                        backgroundColor: Brand.surfaceHi,
+                        child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?',
+                            style: const TextStyle(color: Brand.emerald, fontWeight: FontWeight.bold)),
+                      ),
+                      Positioned(
+                        right: 0,
+                        bottom: 0,
+                        child: Container(
+                          width: 13,
+                          height: 13,
+                          decoration: BoxDecoration(
+                            color: strong ? Brand.emerald : Brand.amber,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Brand.charcoal, width: 2),
+                          ),
+                        ),
+                      ),
+                    ]),
+                    title: Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                    subtitle: Text(strong ? 'on mesh · strong signal' : 'on mesh · weak signal',
+                        style: const TextStyle(color: Brand.textDim, fontSize: 12)),
+                    trailing: const Icon(Icons.lock_outline, size: 16, color: Brand.textDim),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => PrivateChatScreen(peerEid: p.eid, peerName: name)),
+                    ),
+                  );
+                }),
+            ],
           );
         },
       ),
     );
   }
-}
 
-class ChatThreadScreen extends StatefulWidget {
-  final Conversation conversation;
-  const ChatThreadScreen({super.key, required this.conversation});
-
-  @override
-  State<ChatThreadScreen> createState() => _ChatThreadScreenState();
-}
-
-class _ChatThreadScreenState extends State<ChatThreadScreen> {
-  late final List<ChirpMessage> _messages =
-      List.of(widget.conversation.messages);
-  final _controller = TextEditingController();
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _send() {
-    final t = _controller.text.trim();
-    if (t.isEmpty) return;
-    setState(() {
-      _messages.add(ChirpMessage(fromId: meId, text: t, time: 'now'));
-      _controller.clear();
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        titleSpacing: 0,
-        title: Row(
-          children: [
-            CircleAvatar(
-              radius: 18,
-              backgroundColor: Brand.surfaceHi,
-              child: Icon(widget.conversation.icon, size: 18, color: Brand.emerald),
-            ),
-            const SizedBox(width: 10),
-            Text(widget.conversation.title),
-          ],
-        ),
-      ),
-      body: Column(
-        children: [
-          Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.all(12),
-              itemCount: _messages.length,
-              itemBuilder: (context, i) => _bubble(_messages[i]),
-            ),
-          ),
-          _composer(),
-        ],
-      ),
-    );
-  }
-
-  Widget _bubble(ChirpMessage m) {
-    final mine = m.fromId == meId;
-    final sender = mine ? null : memberById(m.fromId);
-    return Align(
-      alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.72),
+  Widget _liveChip() => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
         decoration: BoxDecoration(
-          gradient: m.viaMesh ? Brand.meshGradient : null,
-          color: m.viaMesh ? null : (mine ? Brand.teal : Brand.surface),
-          borderRadius: BorderRadius.only(
-            topLeft: const Radius.circular(16),
-            topRight: const Radius.circular(16),
-            bottomLeft: Radius.circular(mine ? 16 : 4),
-            bottomRight: Radius.circular(mine ? 4 : 16),
-          ),
-          boxShadow: m.viaMesh
-              ? [BoxShadow(color: Brand.emerald.withValues(alpha: 0.35), blurRadius: 12)]
-              : null,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (sender != null)
-              Text(sender.name,
-                  style: TextStyle(
-                      color: sender.color, fontSize: 11, fontWeight: FontWeight.bold)),
-            if (m.isVoice) _voice(m) else Text(m.text, style: const TextStyle(color: Brand.text)),
-            const SizedBox(height: 4),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(m.time,
-                    style: TextStyle(
-                        color: mine || m.viaMesh
-                            ? Colors.white70
-                            : Brand.textDim,
-                        fontSize: 10)),
-                if (m.viaMesh) ...[
-                  const SizedBox(width: 5),
-                  const Icon(Icons.hub, size: 11, color: Colors.white),
-                  const SizedBox(width: 2),
-                  const Text('mesh',
-                      style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w600)),
-                ],
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _voice(ChirpMessage m) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Icon(Icons.play_circle_fill, color: Colors.white, size: 28),
-        const SizedBox(width: 8),
-        Container(width: 90, height: 3, color: Colors.white54),
-        const SizedBox(width: 8),
-        Text('0:0${m.voiceSeconds}', style: const TextStyle(color: Colors.white, fontSize: 11)),
-      ],
-    );
-  }
-
-  Widget _composer() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-      color: Brand.charcoalHi,
-      child: SafeArea(
-        top: false,
-        child: Row(
-          children: [
-            const Icon(Icons.mic, color: Brand.textDim),
-            const SizedBox(width: 8),
-            Expanded(
-              child: TextField(
-                controller: _controller,
-                decoration: const InputDecoration(
-                  hintText: 'Send a chirp…',
-                  filled: true,
-                  fillColor: Brand.surface,
-                  isDense: true,
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.all(Radius.circular(24)),
-                      borderSide: BorderSide.none),
-                ),
-                onSubmitted: (_) => _send(),
-              ),
-            ),
-            const SizedBox(width: 8),
-            CircleAvatar(
-              backgroundColor: Brand.emerald,
-              child: IconButton(
-                icon: const Icon(Icons.send, color: Brand.charcoal),
-                onPressed: _send,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+            color: Brand.emerald.withValues(alpha: 0.16), borderRadius: BorderRadius.circular(8)),
+        child: const Text('LIVE',
+            style: TextStyle(color: Brand.emerald, fontSize: 9, fontWeight: FontWeight.bold)),
+      );
 }

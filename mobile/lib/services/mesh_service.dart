@@ -14,6 +14,7 @@ class MeshMessage {
   final String sourceEid; // 'me' for locally-sent
   final String senderName;
   final String text;
+  final String destEid; // 'broadcast' (Family Nest) or a peer EID (private)
   final int hopCount;
   final bool viaMesh; // received over the mesh (vs. locally echoed)
 
@@ -22,6 +23,7 @@ class MeshMessage {
     required this.sourceEid,
     required this.senderName,
     required this.text,
+    this.destEid = 'broadcast',
     required this.hopCount,
     required this.viaMesh,
   });
@@ -72,6 +74,17 @@ class MeshService extends ChangeNotifier {
   List<MeshMessage> get messages => List.unmodifiable(_messages);
   List<MemberPresence> get presence => _presence.values.toList();
   bool get hasPresence => _presence.isNotEmpty;
+
+  /// Family Nest (group) messages.
+  List<MeshMessage> get broadcastMessages =>
+      _messages.where((m) => m.destEid == 'broadcast').toList();
+
+  /// Private 1-on-1 thread with a specific peer.
+  List<MeshMessage> directMessagesWith(String peerEid) => _messages
+      .where((m) =>
+          (m.sourceEid == peerEid && m.destEid == _eid) ||
+          (m.sourceEid == 'me' && m.destEid == peerEid))
+      .toList();
 
   Future<void> start() async {
     if (_running) return;
@@ -184,6 +197,7 @@ class MeshService extends ChangeNotifier {
           sourceEid: sourceEid,
           senderName: _displayName(sourceEid, env.senderName),
           text: env.text,
+          destEid: m['destEid']?.toString() ?? 'broadcast',
           hopCount: hops,
           viaMesh: true,
         ));
@@ -243,6 +257,7 @@ class MeshService extends ChangeNotifier {
       sourceEid: 'me',
       senderName: name,
       text: text,
+      destEid: 'broadcast',
       hopCount: 0,
       viaMesh: false,
     ));
@@ -256,6 +271,30 @@ class MeshService extends ChangeNotifier {
     } catch (_) {
       // engine not ready — bubble already shown; it will resend on next contact
     }
+  }
+
+  /// Send a private chat directly to one peer (1-on-1, not the whole family).
+  Future<void> sendChatTo(String peerEid, String text) async {
+    if (!_running || text.trim().isEmpty) return;
+    final name = Identity.instance.name ?? 'You';
+
+    _messages.add(MeshMessage(
+      id: 'local-${DateTime.now().millisecondsSinceEpoch}',
+      sourceEid: 'me',
+      senderName: name,
+      text: text,
+      destEid: peerEid,
+      hopCount: 0,
+      viaMesh: false,
+    ));
+    _saveHistory();
+    notifyListeners();
+
+    final family = Identity.instance.familyCode ?? '';
+    final payload = MeshEnvelope.chat(family, name, text);
+    try {
+      await _method.invokeMethod('sendText', {'text': payload, 'destEid': peerEid});
+    } catch (_) {}
   }
 
   /// Reload saved chat history so a restart doesn't wipe the conversation.
@@ -272,6 +311,7 @@ class MeshService extends ChangeNotifier {
           sourceEid: m['s']?.toString() ?? '',
           senderName: m['n']?.toString() ?? '',
           text: text,
+          destEid: m['d']?.toString() ?? 'broadcast',
           hopCount: 0,
           viaMesh: m['v'] == true,
         ));
@@ -288,6 +328,7 @@ class MeshService extends ChangeNotifier {
           's': m.sourceEid,
           'n': m.senderName,
           't': m.text,
+          'd': m.destEid,
           'v': m.viaMesh,
         })).toList();
     _prefs?.setStringList(_kHistory, raw);

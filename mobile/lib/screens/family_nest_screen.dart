@@ -269,7 +269,7 @@ class _FamilyNestScreenState extends State<FamilyNestScreen> {
             child: AnimatedBuilder(
               animation: _mesh,
               builder: (context, _) {
-                final msgs = _mesh.messages;
+                final msgs = _mesh.broadcastMessages;
                 if (msgs.isEmpty) return _empty();
                 _jumpToBottom(); // stick to the newest message
                 return ListView.builder(
