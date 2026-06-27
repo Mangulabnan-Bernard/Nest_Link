@@ -53,8 +53,8 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
     final b64 = await _voice.stopAsBase64();
     if (b64 == null) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('Recording too short')));
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Keep the voice clip short (a few seconds)')));
       }
       return;
     }
@@ -175,10 +175,18 @@ class _PrivateChatScreenState extends State<PrivateChatScreen> {
     );
   }
 
+  Future<void> _playVoice(MeshMessage m) async {
+    final err = await _voice.play(m.audioB64!);
+    if (err != null && mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Could not play voice clip')));
+    }
+  }
+
   Widget _voiceContent(MeshMessage m) {
     final canPlay = m.audioB64 != null;
     return InkWell(
-      onTap: canPlay ? () => _voice.play(m.audioB64!) : null,
+      onTap: canPlay ? () => _playVoice(m) : null,
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         Icon(canPlay ? Icons.play_circle_fill : Icons.mic,
             color: canPlay ? Brand.text : Brand.textDim, size: 26),

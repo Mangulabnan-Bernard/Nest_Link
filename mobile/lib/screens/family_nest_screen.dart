@@ -37,7 +37,7 @@ class _FamilyNestScreenState extends State<FamilyNestScreen> {
     setState(() => _recording = false);
     final b64 = await _voice.stopAsBase64();
     if (b64 == null) {
-      if (mounted) _toast('Recording too short', Brand.amber, Icons.mic_off);
+      if (mounted) _toast('Keep the voice clip short (a few seconds)', Brand.amber, Icons.mic_off);
       return;
     }
     await _mesh.sendVoice(b64);
@@ -484,10 +484,15 @@ class _FamilyNestScreenState extends State<FamilyNestScreen> {
     );
   }
 
+  Future<void> _playVoice(MeshMessage m) async {
+    final err = await _voice.play(m.audioB64!);
+    if (err != null && mounted) _toast('Could not play voice clip', Brand.coral, Icons.volume_off);
+  }
+
   Widget _voiceContent(MeshMessage m) {
     final canPlay = m.audioB64 != null;
     return InkWell(
-      onTap: canPlay ? () => _voice.play(m.audioB64!) : null,
+      onTap: canPlay ? () => _playVoice(m) : null,
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         Icon(canPlay ? Icons.play_circle_fill : Icons.mic,
             color: canPlay ? Brand.text : Brand.textDim, size: 26),

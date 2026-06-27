@@ -19,13 +19,16 @@ class Voice {
     final dir = await getTemporaryDirectory();
     _path = '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
     await _rec.start(
-      const RecordConfig(encoder: AudioEncoder.aacLc, bitRate: 24000, sampleRate: 16000, numChannels: 1),
+      // Low bitrate mono so short clips fit in a single mesh bundle (~32KB) and
+      // arrive reliably without fragmentation.
+      const RecordConfig(encoder: AudioEncoder.aacLc, bitRate: 16000, sampleRate: 16000, numChannels: 1),
       path: _path!,
     );
     return true;
   }
 
-  /// Stop and return the clip as base64, or null if it failed / was too big.
+  /// Stop and return the clip as base64. Returns null if recording failed,
+  /// was effectively empty, or is too big to ride the mesh.
   Future<String?> stopAsBase64() async {
     final path = await _rec.stop() ?? _path;
     if (path == null) return null;
@@ -35,7 +38,8 @@ class Voice {
     try {
       await f.delete();
     } catch (_) {}
-    if (bytes.isEmpty || bytes.length > 250000) return null; // ~250KB cap
+    if (bytes.length < 1000) return null; // empty / too-short recording
+    if (bytes.length > 22000) return null; // too long — must fit one mesh bundle
     return base64Encode(bytes);
   }
 
@@ -45,10 +49,20 @@ class Voice {
     } catch (_) {}
   }
 
-  Future<void> play(String base64Audio) async {
-    final dir = await getTemporaryDirectory();
-    final path = '${dir.path}/play_${DateTime.now().millisecondsSinceEpoch}.m4a';
-    await File(path).writeAsBytes(base64Decode(base64Audio));
-    await _player.play(DeviceFileSource(path));
+  /// Play a received clip. Returns an error message on failure, or null on success.
+  Future<String?> play(String base64Audio) async {
+    try {
+      final bytes = base64Decode(base64Audio);
+      if (bytes.isEmpty) return 'empty audio';
+      final dir = await getTemporaryDirectory();
+      final path = '${dir.path}/play_${DateTime.now().millisecondsSinceEpoch}.m4a';
+      await File(path).writeAsBytes(bytes);
+      await _player.stop();
+      await _player.setReleaseMode(ReleaseMode.stop);
+      await _player.play(DeviceFileSource(path));
+      return null;
+    } catch (e) {
+      return e.toString();
+    }
   }
 }
