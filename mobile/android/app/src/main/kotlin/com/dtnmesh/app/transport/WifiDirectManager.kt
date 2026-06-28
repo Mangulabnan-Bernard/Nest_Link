@@ -235,6 +235,14 @@ class WifiDirectManager(
      * Intenta conectar con peers conocidos del caché sin esperar DNS-SD.
      * Solo usa MACs del mapa cacheado que ya sabemos que son DTN y donde somos iniciadores.
      */
+    /** On-demand refresh for the "Search" button: re-advertise, re-scan, and
+     *  immediately try any cached peers (faster than waiting for the next cycle). */
+    fun refreshNow() {
+        registerService()
+        discoverServices()
+        tryCachedPeerConnect()
+    }
+
     private fun tryCachedPeerConnect() {
         if (_isConnected.value || _connectedDeviceAddress.value.isNotEmpty()) return
         val cachedDtnPeers = _peerEidMap.value.filter { (_, eid) ->

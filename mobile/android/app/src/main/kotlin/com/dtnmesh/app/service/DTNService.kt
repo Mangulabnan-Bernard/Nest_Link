@@ -230,7 +230,7 @@ class DTNService : LifecycleService() {
 
     /** Force a fresh discovery pass across Wi-Fi Direct + Bluetooth on demand. */
     fun rescan() {
-        try { wifiDirectManager.startDiscovery() } catch (_: Exception) {}
+        try { wifiDirectManager.refreshNow() } catch (_: Exception) {}
         try { bluetoothTransport.startDiscovery() } catch (_: Exception) {}
         updateNotification("Buscando nodos…")
     }
