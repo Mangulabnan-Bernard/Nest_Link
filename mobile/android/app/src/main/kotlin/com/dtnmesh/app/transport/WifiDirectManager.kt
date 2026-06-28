@@ -291,20 +291,20 @@ class WifiDirectManager(
                     // Nunca es non-DTN: si estaba blacklisteado por error, sacarlo
                     nonDtnDevices.remove(mac)
                     DTNLogger.i(TAG, "Servicio DTN encontrado: $instanceName en $mac")
-                    // Solo el EID MAYOR inicia la conexión P2P. El EID menor nunca llama
-                    // manager.connect() — solo espera. Esto elimina colisiones 100%.
-                    if (localEid > peerEid) {
-                        val now = System.currentTimeMillis()
-                        // Longer cooldown between connection requests so a 3rd phone
-                        // doesn't spam the "wants to connect" prompt every few seconds.
-                        if (!_isConnected.value && _connectedDeviceAddress.value.isEmpty()
-                            && (now - lastConnectAttemptMs) > 20000) {
-                            DTNLogger.i(TAG, "Iniciando conexión a ${device.deviceName} ($mac) [soy iniciador]")
-                            lastConnectAttemptMs = now
-                            _connectedDeviceAddress.value = mac
-                            scope.launch { connectToDevice(device) }
-                        }
-                    } else {
+                    // Normally the higher EID initiates (avoids collisions). But if
+                    // we've been unconnected for a while — e.g. a 3rd phone that the
+                    // others paired up without — the lower EID ALSO initiates so it
+                    // can join the group instead of waiting forever.
+                    val now = System.currentTimeMillis()
+                    val staleWaiting = (now - startTimeMs) > 25000
+                    if ((localEid > peerEid || staleWaiting)
+                        && !_isConnected.value && _connectedDeviceAddress.value.isEmpty()
+                        && (now - lastConnectAttemptMs) > 20000) {
+                        DTNLogger.i(TAG, "Iniciando conexión a ${device.deviceName} ($mac)")
+                        lastConnectAttemptMs = now
+                        _connectedDeviceAddress.value = mac
+                        scope.launch { connectToDevice(device) }
+                    } else if (localEid <= peerEid) {
                         DTNLogger.d(TAG, "Esperando conexión de ${device.deviceName} [soy servidor]")
                     }
                 }
