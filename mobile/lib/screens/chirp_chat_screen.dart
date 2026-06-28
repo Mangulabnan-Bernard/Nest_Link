@@ -17,6 +17,7 @@ class ChirpChatScreen extends StatefulWidget {
 class _ChirpChatScreenState extends State<ChirpChatScreen> {
   final _mesh = MeshService.instance;
   final _id = Identity.instance;
+  bool _searching = false;
 
   @override
   void initState() {
@@ -25,6 +26,17 @@ class _ChirpChatScreenState extends State<ChirpChatScreen> {
   }
 
   String _nameFor(MemberPresence p) => _id.isKnown(p.eid) ? _id.nameForEid(p.eid) : p.name;
+
+  Future<void> _searchNearby() async {
+    setState(() => _searching = true);
+    await _mesh.rescan();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Searching for family nearby…'), duration: Duration(seconds: 2)));
+    }
+    await Future.delayed(const Duration(seconds: 5));
+    if (mounted) setState(() => _searching = false);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -58,13 +70,32 @@ class _ChirpChatScreenState extends State<ChirpChatScreen> {
 
               // Nearby family (private chats)
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 18, 16, 8),
+                padding: const EdgeInsets.fromLTRB(16, 18, 8, 8),
                 child: Row(children: [
                   const Text('Nearby family',
                       style: TextStyle(color: Brand.textDim, fontWeight: FontWeight.bold, fontSize: 13)),
                   const SizedBox(width: 8),
                   Text('${nearby.length} online',
                       style: const TextStyle(color: Brand.textDim, fontSize: 12)),
+                  const Spacer(),
+                  if (_searching)
+                    const Padding(
+                      padding: EdgeInsets.only(right: 8),
+                      child: Row(children: [
+                        SizedBox(
+                            width: 13,
+                            height: 13,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Brand.emerald)),
+                        SizedBox(width: 6),
+                        Text('Searching…', style: TextStyle(color: Brand.emerald, fontSize: 12)),
+                      ]),
+                    )
+                  else
+                    TextButton.icon(
+                      onPressed: _searchNearby,
+                      icon: const Icon(Icons.radar, size: 16, color: Brand.emerald),
+                      label: const Text('Search', style: TextStyle(color: Brand.emerald, fontSize: 13)),
+                    ),
                 ]),
               ),
 

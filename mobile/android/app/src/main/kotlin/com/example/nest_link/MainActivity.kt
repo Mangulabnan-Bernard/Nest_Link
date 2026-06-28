@@ -93,6 +93,15 @@ class MainActivity : FlutterActivity() {
                     result.success(true)
                 }
 
+                "rescan" -> {
+                    dtnService?.rescan()
+                    result.success(true)
+                }
+
+                "getMeshStatus" -> {
+                    result.success(dtnService?.meshStatus() ?: emptyMap<String, Any>())
+                }
+
                 "getLocalEid" -> {
                     val eid = dtnService?.localEid ?: readPersistedEid()
                     if (eid != null) result.success(eid)

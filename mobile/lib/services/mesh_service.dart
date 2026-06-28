@@ -70,6 +70,12 @@ class MeshService extends ChangeNotifier {
   SharedPreferences? _prefs;
   static const _kHistory = 'chat_history';
 
+  // Live radio-level diagnostic (from the engine).
+  bool _wifiConnected = false;
+  int _discoveredPeers = 0;
+  bool get wifiConnected => _wifiConnected;
+  int get discoveredPeers => _discoveredPeers;
+
   final _messages = <MeshMessage>[]; // chat only
   final _presence = <String, MemberPresence>{}; // eid -> presence
 
@@ -119,8 +125,8 @@ class MeshService extends ChangeNotifier {
     _pingTimer ??= Timer.periodic(const Duration(seconds: 12), (_) => _sendPing());
     _sendPing();
 
-    // Tick the UI every 5s so signal/age indicators update even with no packets.
-    _refreshTimer ??= Timer.periodic(const Duration(seconds: 5), (_) => notifyListeners());
+    // Tick every 5s: refresh signal/age indicators + poll the radio diagnostic.
+    _refreshTimer ??= Timer.periodic(const Duration(seconds: 5), (_) => _poll());
 
     for (var i = 0; i < 12; i++) {
       await Future.delayed(const Duration(milliseconds: 250));
@@ -131,6 +137,29 @@ class MeshService extends ChangeNotifier {
       }
     }
     notifyListeners();
+  }
+
+  /// Poll the engine for the radio-level connection state + refresh the UI.
+  Future<void> _poll() async {
+    try {
+      final s = await _method.invokeMethod('getMeshStatus');
+      if (s is Map) {
+        _wifiConnected = s['wifiConnected'] == true;
+        _discoveredPeers = (s['discoveredPeers'] as num?)?.toInt() ?? 0;
+      }
+    } catch (_) {}
+    notifyListeners();
+  }
+
+  /// Force a fresh nearby scan (Wi-Fi Direct + Bluetooth discovery).
+  Future<void> rescan() async {
+    if (!_running) {
+      await start();
+      return;
+    }
+    try {
+      await _method.invokeMethod('rescan');
+    } catch (_) {}
   }
 
   /// Re-send my (possibly changed) family code to the native engine.

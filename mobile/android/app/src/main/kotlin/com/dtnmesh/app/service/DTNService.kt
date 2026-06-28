@@ -228,6 +228,20 @@ class DTNService : LifecycleService() {
             .notify(NOTIF_ID, buildNotification(status))
     }
 
+    /** Force a fresh discovery pass across Wi-Fi Direct + Bluetooth on demand. */
+    fun rescan() {
+        try { wifiDirectManager.startDiscovery() } catch (_: Exception) {}
+        try { bluetoothTransport.startDiscovery() } catch (_: Exception) {}
+        updateNotification("Buscando nodos…")
+    }
+
+    /** Live radio-level connection state, for the in-app diagnostic. */
+    fun meshStatus(): Map<String, Any> = mapOf(
+        "wifiConnected" to wifiDirectManager.isConnected.value,
+        "discoveredPeers" to wifiDirectManager.peers.value.size,
+        "connectedAddress" to wifiDirectManager.connectedDeviceAddress.value
+    )
+
     private fun buildNotification(status: String) = NotificationCompat.Builder(this, NOTIF_CHANNEL_ID)
         .setContentTitle("DTN Mesh — $localEid")
         .setContentText(status)

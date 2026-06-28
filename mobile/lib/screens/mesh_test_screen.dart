@@ -110,6 +110,37 @@ class _MeshTestScreenState extends State<MeshTestScreen> {
                   style: const TextStyle(color: Brand.emerald, fontFamily: 'monospace')),
             ],
           ),
+          const SizedBox(height: 10),
+          // ── live radio diagnostic ──
+          Row(children: [
+            Icon(_mesh.wifiConnected ? Icons.wifi : Icons.wifi_find,
+                size: 16, color: _mesh.wifiConnected ? Brand.emerald : Brand.amber),
+            const SizedBox(width: 8),
+            Text(
+              _mesh.wifiConnected ? 'Wi-Fi link: CONNECTED' : 'Wi-Fi link: not connected yet',
+              style: TextStyle(
+                  color: _mesh.wifiConnected ? Brand.emerald : Brand.amber,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13),
+            ),
+          ]),
+          const SizedBox(height: 6),
+          Row(children: [
+            const Icon(Icons.devices_other, size: 16, color: Brand.textDim),
+            const SizedBox(width: 8),
+            Text('Devices seen nearby: ${_mesh.discoveredPeers}',
+                style: const TextStyle(color: Brand.textDim, fontSize: 13)),
+          ]),
+          if (running && !_mesh.wifiConnected)
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Text(
+                'If this stays "not connected": turn on Wi-Fi + Bluetooth + Location on both '
+                'phones, disable battery optimization for Nest Link, keep both apps open, '
+                'and accept the connection prompt.',
+                style: TextStyle(color: Brand.textDim, fontSize: 11),
+              ),
+            ),
         ],
       ),
     );
