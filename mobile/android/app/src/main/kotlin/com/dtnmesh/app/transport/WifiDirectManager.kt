@@ -295,8 +295,10 @@ class WifiDirectManager(
                     // manager.connect() — solo espera. Esto elimina colisiones 100%.
                     if (localEid > peerEid) {
                         val now = System.currentTimeMillis()
+                        // Longer cooldown between connection requests so a 3rd phone
+                        // doesn't spam the "wants to connect" prompt every few seconds.
                         if (!_isConnected.value && _connectedDeviceAddress.value.isEmpty()
-                            && (now - lastConnectAttemptMs) > 5000) {
+                            && (now - lastConnectAttemptMs) > 20000) {
                             DTNLogger.i(TAG, "Iniciando conexión a ${device.deviceName} ($mac) [soy iniciador]")
                             lastConnectAttemptMs = now
                             _connectedDeviceAddress.value = mac
