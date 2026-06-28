@@ -235,11 +235,19 @@ class DTNService : LifecycleService() {
         updateNotification("Buscando nodos…")
     }
 
-    /** Live radio-level connection state, for the in-app diagnostic. */
+    /** Live radio-level connection state + detected devices, for the diagnostic. */
     fun meshStatus(): Map<String, Any> = mapOf(
         "wifiConnected" to wifiDirectManager.isConnected.value,
         "discoveredPeers" to wifiDirectManager.peers.value.size,
-        "connectedAddress" to wifiDirectManager.connectedDeviceAddress.value
+        "connectedAddress" to wifiDirectManager.connectedDeviceAddress.value,
+        "peers" to wifiDirectManager.peers.value.map { d ->
+            mapOf(
+                "name" to (d.deviceName ?: ""),
+                "address" to (d.deviceAddress ?: ""),
+                "isDtn" to wifiDirectManager.peerEidMap.value.containsKey(d.deviceAddress),
+                "status" to d.status // 0=connected 1=invited 2=failed 3=available 4=unavailable
+            )
+        }
     )
 
     private fun buildNotification(status: String) = NotificationCompat.Builder(this, NOTIF_CHANNEL_ID)

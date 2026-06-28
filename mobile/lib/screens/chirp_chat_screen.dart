@@ -29,13 +29,18 @@ class _ChirpChatScreenState extends State<ChirpChatScreen> {
 
   Future<void> _searchNearby() async {
     setState(() => _searching = true);
-    await _mesh.rescan();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Searching for family nearby…'), duration: Duration(seconds: 2)));
+          content: Text('Searching for phones nearby…'), duration: Duration(seconds: 3)));
     }
-    await Future.delayed(const Duration(seconds: 5));
-    if (mounted) setState(() => _searching = false);
+    // Keep actively scanning for ~12s (re-trigger discovery a few times) so it
+    // doesn't stop too fast and has time to find devices.
+    for (var i = 0; i < 4; i++) {
+      await _mesh.rescan();
+      await Future.delayed(const Duration(seconds: 3));
+      if (!mounted) return;
+    }
+    setState(() => _searching = false);
   }
 
   @override

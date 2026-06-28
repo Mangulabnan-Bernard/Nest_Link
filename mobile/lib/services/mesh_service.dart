@@ -33,6 +33,30 @@ class MeshMessage {
   });
 }
 
+/// A raw Wi-Fi Direct device the radio detects (any device, app or not).
+class DetectedDevice {
+  final String name;
+  final String address;
+  final bool isDtn; // is it running Nest Link?
+  final int status; // 0=connected 1=invited 2=failed 3=available 4=unavailable
+  DetectedDevice(this.name, this.address, this.isDtn, this.status);
+
+  String get statusLabel {
+    switch (status) {
+      case 0:
+        return 'connected';
+      case 1:
+        return 'inviting…';
+      case 2:
+        return 'failed';
+      case 3:
+        return 'available';
+      default:
+        return 'out of range';
+    }
+  }
+}
+
 /// Live presence/status of a person seen over the mesh.
 class MemberPresence {
   final String eid;
@@ -75,8 +99,12 @@ class MeshService extends ChangeNotifier {
   // Live radio-level diagnostic (from the engine).
   bool _wifiConnected = false;
   int _discoveredPeers = 0;
+  List<DetectedDevice> _detected = [];
   bool get wifiConnected => _wifiConnected;
   int get discoveredPeers => _discoveredPeers;
+
+  /// Raw Wi-Fi Direct devices the radio currently sees (like the OS settings list).
+  List<DetectedDevice> get detected => _detected;
 
   final _messages = <MeshMessage>[]; // chat only
   final _presence = <String, MemberPresence>{}; // eid -> presence
@@ -148,6 +176,18 @@ class MeshService extends ChangeNotifier {
       if (s is Map) {
         _wifiConnected = s['wifiConnected'] == true;
         _discoveredPeers = (s['discoveredPeers'] as num?)?.toInt() ?? 0;
+        final peers = s['peers'];
+        if (peers is List) {
+          _detected = peers.map((p) {
+            final m = p as Map;
+            return DetectedDevice(
+              m['name']?.toString() ?? '',
+              m['address']?.toString() ?? '',
+              m['isDtn'] == true,
+              (m['status'] as num?)?.toInt() ?? 4,
+            );
+          }).toList();
+        }
       }
     } catch (_) {}
     notifyListeners();

@@ -131,6 +131,27 @@ class _MeshTestScreenState extends State<MeshTestScreen> {
             Text('Devices seen nearby: ${_mesh.discoveredPeers}',
                 style: const TextStyle(color: Brand.textDim, fontSize: 13)),
           ]),
+          if (_mesh.detected.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            ..._mesh.detected.map((d) => Padding(
+                  padding: const EdgeInsets.only(top: 4, left: 4),
+                  child: Row(children: [
+                    Icon(d.isDtn ? Icons.smartphone : Icons.device_unknown,
+                        size: 14, color: d.isDtn ? Brand.emerald : Brand.textDim),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(d.name.isEmpty ? d.address : d.name,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              color: d.isDtn ? Brand.text : Brand.textDim, fontSize: 12.5)),
+                    ),
+                    if (d.isDtn)
+                      const Text('Nest Link · ',
+                          style: TextStyle(color: Brand.emerald, fontSize: 10)),
+                    Text(d.statusLabel, style: const TextStyle(color: Brand.textDim, fontSize: 11)),
+                  ]),
+                )),
+          ],
           if (running && !_mesh.wifiConnected)
             const Padding(
               padding: EdgeInsets.only(top: 8),
