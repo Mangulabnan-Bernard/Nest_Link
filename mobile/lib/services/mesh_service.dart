@@ -33,11 +33,12 @@ class MeshMessage {
   });
 }
 
-/// Live presence/status of a family member seen over the mesh.
+/// Live presence/status of a person seen over the mesh.
 class MemberPresence {
   final String eid;
   String name;
   String status;
+  String familyCode; // which family they belong to (for the discover list)
   int lastSeenMs;
   double? lat;
   double? lng;
@@ -46,6 +47,7 @@ class MemberPresence {
     required this.name,
     required this.status,
     required this.lastSeenMs,
+    this.familyCode = '',
     this.lat,
     this.lng,
   });
@@ -208,29 +210,26 @@ class MeshService extends ChangeNotifier {
     final hops = (m['hopCount'] as num?)?.toInt() ?? 0;
     final env = MeshEnvelope.decode(m['text']?.toString() ?? '');
 
-    // Privacy: ignore traffic that isn't from my family (the phone still relays
-    // it for others, it just won't be shown here).
     final myFamily = Identity.instance.familyCode ?? '';
-    if (env.familyCode.isNotEmpty && myFamily.isNotEmpty && env.familyCode != myFamily) {
-      return;
-    }
+    final sameFamily = env.familyCode.isEmpty || myFamily.isEmpty || env.familyCode == myFamily;
+    final destEid = m['destEid']?.toString() ?? 'broadcast';
+    final toBroadcast = destEid == 'broadcast';
+    final toMe = destEid == _eid;
 
-    // learn the sender's name from the envelope (registry rename still wins)
-    if (env.senderName.isNotEmpty && !Identity.instance.isKnown(sourceEid)) {
-      _touchPresence(sourceEid, env.senderName, null);
-    }
+    // Always track presence so EVERYONE nearby (any family) is discoverable.
+    _touchPresence(sourceEid, env.senderName, null, env.familyCode);
 
     switch (env.kind) {
       case MeshKind.chat:
-        // Guard: never show an empty/garbled chat bubble (e.g. a stray packet
-        // from a mismatched build, or a non-chat payload).
         if (env.text.trim().isEmpty) break;
+        if (toBroadcast && !sameFamily) break; // group chat is family-private
+        if (!toBroadcast && !toMe) break; // a private message not addressed to me
         _messages.add(MeshMessage(
           id: m['id']?.toString() ?? '',
           sourceEid: sourceEid,
           senderName: _displayName(sourceEid, env.senderName),
           text: env.text,
-          destEid: m['destEid']?.toString() ?? 'broadcast',
+          destEid: destEid,
           hopCount: hops,
           viaMesh: true,
         ));
@@ -238,12 +237,14 @@ class MeshService extends ChangeNotifier {
         break;
       case MeshKind.voice:
         if (env.audioB64.isEmpty) break;
+        if (toBroadcast && !sameFamily) break;
+        if (!toBroadcast && !toMe) break;
         _messages.add(MeshMessage(
           id: m['id']?.toString() ?? '',
           sourceEid: sourceEid,
           senderName: _displayName(sourceEid, env.senderName),
           text: '🎙️ Voice message',
-          destEid: m['destEid']?.toString() ?? 'broadcast',
+          destEid: destEid,
           audioB64: env.audioB64,
           hopCount: hops,
           viaMesh: true,
@@ -251,11 +252,11 @@ class MeshService extends ChangeNotifier {
         _saveHistory();
         break;
       case MeshKind.status:
-        _touchPresence(sourceEid, env.senderName, env.status);
+        // status/location are only shared within your own family (privacy)
+        if (sameFamily) _touchPresence(sourceEid, env.senderName, env.status, env.familyCode);
         break;
       case MeshKind.location:
-        _touchPresence(sourceEid, env.senderName, null);
-        if (env.lat != null && env.lng != null) {
+        if (sameFamily && env.lat != null && env.lng != null) {
           final p = _presence[sourceEid];
           p?.lat = env.lat;
           p?.lng = env.lng;
@@ -263,8 +264,7 @@ class MeshService extends ChangeNotifier {
         break;
       case MeshKind.ping:
       case MeshKind.unknown:
-        _touchPresence(sourceEid, env.senderName, null);
-        break;
+        break; // presence already tracked above
     }
     notifyListeners();
   }
@@ -275,7 +275,7 @@ class MeshService extends ChangeNotifier {
     return Identity.instance.nameForEid(eid);
   }
 
-  void _touchPresence(String eid, String name, String? status) {
+  void _touchPresence(String eid, String name, String? status, String familyCode) {
     final now = DateTime.now().millisecondsSinceEpoch;
     final existing = _presence[eid];
     if (existing == null) {
@@ -283,11 +283,13 @@ class MeshService extends ChangeNotifier {
         eid: eid,
         name: name.isNotEmpty ? name : Identity.instance.nameForEid(eid),
         status: status ?? '—',
+        familyCode: familyCode,
         lastSeenMs: now,
       );
     } else {
       if (name.isNotEmpty) existing.name = name;
       if (status != null) existing.status = status;
+      if (familyCode.isNotEmpty) existing.familyCode = familyCode;
       existing.lastSeenMs = now;
     }
   }
@@ -423,9 +425,24 @@ class MeshService extends ChangeNotifier {
     return 'lost';
   }
 
-  /// Members we currently consider reachable (heard within the last ~55s).
+  /// Everyone reachable on the mesh right now (any family), for discovery.
   List<MemberPresence> get reachable =>
       _presence.values.where((p) => qualityOf(p) != 'lost').toList();
+
+  /// Reachable people in MY family (same code, or code-less).
+  List<MemberPresence> get familyReachable {
+    final my = Identity.instance.familyCode ?? '';
+    return reachable
+        .where((p) => p.familyCode.isEmpty || my.isEmpty || p.familyCode == my)
+        .toList();
+  }
+
+  /// Reachable people in OTHER families — shown in the "discover nearby" list.
+  List<MemberPresence> get othersReachable {
+    final my = Identity.instance.familyCode ?? '';
+    if (my.isEmpty) return const [];
+    return reachable.where((p) => p.familyCode.isNotEmpty && p.familyCode != my).toList();
+  }
 
   /// Broadcast my Safe Flight status to the family.
   Future<void> sendStatus(String status) async {

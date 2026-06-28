@@ -75,7 +75,7 @@ class _SafeFlightScreenState extends State<SafeFlightScreen> {
           AnimatedBuilder(
             animation: _mesh,
             builder: (context, _) {
-              final live = _mesh.presence;
+              final live = _mesh.familyReachable;
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [

@@ -73,7 +73,7 @@ class _FamilyNestScreenState extends State<FamilyNestScreen> {
   /// Toast when a family member connects or drops out of range.
   void _onMeshChange() {
     if (!mounted) return;
-    final now = _mesh.reachable.map((p) => p.eid).toSet();
+    final now = _mesh.familyReachable.map((p) => p.eid).toSet();
     if (!_baselineSet) {
       _prevReachable = now;
       _baselineSet = true;
@@ -321,7 +321,7 @@ class _FamilyNestScreenState extends State<FamilyNestScreen> {
         if (!_mesh.running) {
           return _bar(Brand.surface, Icons.hub, 'Mesh off', Brand.textDim);
         }
-        final members = _mesh.reachable;
+        final members = _mesh.familyReachable;
         if (members.isEmpty) {
           return _bar(Brand.surface, Icons.search, 'Searching for family nearby…', Brand.textDim);
         }

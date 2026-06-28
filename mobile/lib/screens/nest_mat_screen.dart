@@ -60,7 +60,7 @@ class _NestMatScreenState extends State<NestMatScreen>
             child: AnimatedBuilder(
               animation: _mesh,
               builder: (context, _) {
-                final live = _mesh.presence;
+                final live = _mesh.familyReachable;
                 return ListView(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   children: live.isEmpty
