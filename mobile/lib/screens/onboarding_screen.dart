@@ -75,6 +75,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     widget.onDone();
   }
 
+  /// Skip family setup — start in a personal nest you can share or change later.
+  Future<void> _skipFamily() async {
+    await Identity.instance.createFamily();
+    widget.onDone();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -204,6 +210,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           child: const Text('Join with code'),
         ),
         const Spacer(),
+        Center(
+          child: TextButton(
+            onPressed: _skipFamily,
+            child: const Text('Skip for now — just me (set up family later)',
+                style: TextStyle(color: Brand.textDim)),
+          ),
+        ),
       ],
     );
   }
