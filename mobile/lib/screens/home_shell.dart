@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import '../theme.dart';
+import 'home_screen.dart';
 import 'nest_mat_screen.dart';
 import 'chirp_chat_screen.dart';
 import 'safe_flight_screen.dart';
-import 'mesh_test_screen.dart';
+import 'me_screen.dart';
 
-/// Root scaffold with the four Nest Link tabs.
+/// Root scaffold — Home command center + the feature tabs.
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
 
@@ -17,10 +18,11 @@ class _HomeShellState extends State<HomeShell> {
   int _index = 0;
 
   static const _tabs = [
-    NestMatScreen(),
+    HomeScreen(),
     ChirpChatScreen(),
+    NestMatScreen(),
     SafeFlightScreen(),
-    MeshTestScreen(),
+    MeScreen(),
   ];
 
   @override
@@ -32,21 +34,25 @@ class _HomeShellState extends State<HomeShell> {
         onDestinationSelected: (i) => setState(() => _index = i),
         destinations: const [
           NavigationDestination(
-              icon: Icon(Icons.radar_outlined),
-              selectedIcon: Icon(Icons.radar, color: Brand.emerald),
-              label: 'Nest Mat'),
+              icon: Icon(Icons.home_outlined),
+              selectedIcon: Icon(Icons.home, color: Brand.emerald),
+              label: 'Home'),
           NavigationDestination(
               icon: Icon(Icons.chat_bubble_outline),
               selectedIcon: Icon(Icons.chat_bubble, color: Brand.emerald),
-              label: 'Chirp'),
+              label: 'Chat'),
+          NavigationDestination(
+              icon: Icon(Icons.radar_outlined),
+              selectedIcon: Icon(Icons.radar, color: Brand.emerald),
+              label: 'Map'),
           NavigationDestination(
               icon: Icon(Icons.shield_outlined),
               selectedIcon: Icon(Icons.shield, color: Brand.emerald),
-              label: 'Safe Flight'),
+              label: 'Safety'),
           NavigationDestination(
-              icon: Icon(Icons.hub_outlined),
-              selectedIcon: Icon(Icons.hub, color: Brand.emerald),
-              label: 'Live'),
+              icon: Icon(Icons.person_outline),
+              selectedIcon: Icon(Icons.person, color: Brand.emerald),
+              label: 'Me'),
         ],
       ),
     );

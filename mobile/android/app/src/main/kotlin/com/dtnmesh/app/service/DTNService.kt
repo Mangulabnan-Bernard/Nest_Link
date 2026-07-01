@@ -211,7 +211,8 @@ class DTNService : LifecycleService() {
             val payloadText = String(bundleToStore.payload, Charsets.UTF_8)
             val kind = envelopeKind(payloadText)
             val isChat = bundleToStore.payloadType == PayloadType.AUDIO ||
-                (bundleToStore.payloadType == PayloadType.TEXT && (kind == "chat" || kind == "voice"))
+                (bundleToStore.payloadType == PayloadType.TEXT &&
+                    (kind == "chat" || kind == "voice" || kind == "sos"))
             val fam = envelopeFamily(payloadText)
             val sameFamily = familyCode.isEmpty() || fam.isEmpty() || fam == familyCode
             if (isForUs && isChat && sameFamily) showMessageNotification(bundleToStore)
@@ -309,7 +310,11 @@ class DTNService : LifecycleService() {
     private fun envelopeChatText(text: String): String = try {
         val o = org.json.JSONObject(text)
         val n = o.optString("n", "")
-        val body = if (o.optString("k", "chat") == "voice") "🎙️ Voice message" else o.optString("t", text)
+        val body = when (o.optString("k", "chat")) {
+            "voice" -> "🎙️ Voice message"
+            "sos" -> "🆘 SOS — ${o.optString("st", "Emergency")} — needs help!"
+            else -> o.optString("t", text)
+        }
         if (n.isNotEmpty()) "$n: $body" else body
     } catch (e: Exception) { text }
 

@@ -33,6 +33,30 @@ class MeshMessage {
   });
 }
 
+/// An emergency SOS received (or sent) over the mesh.
+class SosAlert {
+  final String id;
+  final String sourceEid; // 'me' for my own
+  final String name;
+  final String type; // Medical / Fire / Flood / Rescue / Emergency
+  final String medical;
+  final double? lat;
+  final double? lng;
+  final int atMs;
+  SosAlert({
+    required this.id,
+    required this.sourceEid,
+    required this.name,
+    required this.type,
+    required this.medical,
+    required this.atMs,
+    this.lat,
+    this.lng,
+  });
+  bool get mine => sourceEid == 'me';
+  bool get hasLocation => lat != null && lng != null;
+}
+
 /// A raw Wi-Fi Direct device the radio detects (any device, app or not).
 class DetectedDevice {
   final String name;
@@ -108,6 +132,11 @@ class MeshService extends ChangeNotifier {
 
   final _messages = <MeshMessage>[]; // chat only
   final _presence = <String, MemberPresence>{}; // eid -> presence
+  final _alerts = <SosAlert>[]; // SOS alerts (received + sent)
+
+  /// SOS alerts, newest first.
+  List<SosAlert> get alerts => _alerts.reversed.toList();
+  int get activeSosCount => _alerts.where((a) => !a.mine).length;
 
   bool get running => _running;
   String? get eid => _eid;
@@ -302,6 +331,22 @@ class MeshService extends ChangeNotifier {
           p?.lng = env.lng;
         }
         break;
+      case MeshKind.sos:
+        // urgent: show to my family/barangay; dedupe re-sends by SOS id
+        if (!sameFamily) break;
+        final sid = env.sosId.isNotEmpty ? env.sosId : (m['id']?.toString() ?? '');
+        if (_alerts.any((a) => a.id == sid)) break;
+        _alerts.add(SosAlert(
+          id: sid,
+          sourceEid: sourceEid,
+          name: _displayName(sourceEid, env.senderName),
+          type: env.sosType,
+          medical: env.medical,
+          lat: env.lat,
+          lng: env.lng,
+          atMs: DateTime.now().millisecondsSinceEpoch,
+        ));
+        break;
       case MeshKind.ping:
       case MeshKind.unknown:
         break; // presence already tracked above
@@ -444,6 +489,48 @@ class MeshService extends ChangeNotifier {
           'v': m.viaMesh,
         })).toList();
     _prefs?.setStringList(_kHistory, raw);
+  }
+
+  /// Send an emergency SOS: attaches GPS + medical flag, shows instantly, and
+  /// re-broadcasts a few times because it's critical.
+  Future<void> sendSOS(String type, {String medical = ''}) async {
+    if (!_running) await start();
+    final name = Identity.instance.name ?? 'Someone';
+    final family = Identity.instance.familyCode ?? '';
+    final id = 'sos-${DateTime.now().millisecondsSinceEpoch}';
+
+    double? lat, lng;
+    try {
+      if (await Geolocator.isLocationServiceEnabled()) {
+        var perm = await Geolocator.checkPermission();
+        if (perm == LocationPermission.denied) perm = await Geolocator.requestPermission();
+        if (perm != LocationPermission.denied && perm != LocationPermission.deniedForever) {
+          final pos = await Geolocator.getCurrentPosition();
+          lat = pos.latitude;
+          lng = pos.longitude;
+        }
+      }
+    } catch (_) {}
+
+    _alerts.add(SosAlert(
+      id: id,
+      sourceEid: 'me',
+      name: name,
+      type: type,
+      medical: medical,
+      lat: lat,
+      lng: lng,
+      atMs: DateTime.now().millisecondsSinceEpoch,
+    ));
+    notifyListeners();
+
+    final payload = MeshEnvelope.sos(family, name, id, type, lat, lng, medical);
+    for (var i = 0; i < 3; i++) {
+      try {
+        await _method.invokeMethod('sendText', {'text': payload, 'destEid': 'broadcast'});
+      } catch (_) {}
+      await Future.delayed(const Duration(milliseconds: 400));
+    }
   }
 
   /// Broadcast a tiny heartbeat so the family knows I'm still reachable.

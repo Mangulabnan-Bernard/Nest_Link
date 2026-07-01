@@ -4,7 +4,7 @@ import 'dart:convert';
 /// type by JSON-encoding a small envelope. Every envelope carries the sender's
 /// family code ("f") so phones only show their own family's traffic.
 /// Unparseable payloads are treated as plain chat text (backward-compatible).
-enum MeshKind { chat, voice, status, location, ping, unknown }
+enum MeshKind { chat, voice, status, location, ping, sos, unknown }
 
 class MeshEnvelope {
   final MeshKind kind;
@@ -13,6 +13,9 @@ class MeshEnvelope {
   final String text; // chat body
   final String audioB64; // voice clip (base64)
   final String status; // Safe Flight status label
+  final String sosId; // stable id so SOS re-sends dedupe
+  final String sosType; // emergency type (medical/fire/flood/rescue/general)
+  final String medical; // medical note/flag for SOS
   final double? lat;
   final double? lng;
 
@@ -23,6 +26,9 @@ class MeshEnvelope {
     this.text = '',
     this.audioB64 = '',
     this.status = '',
+    this.sosId = '',
+    this.sosType = '',
+    this.medical = '',
     this.lat,
     this.lng,
   });
@@ -42,6 +48,20 @@ class MeshEnvelope {
   /// Lightweight "I'm here" heartbeat — keeps presence fresh without needing GPS.
   static String ping(String family, String senderName) =>
       jsonEncode({'f': family, 'k': 'ping', 'n': senderName});
+
+  /// Emergency SOS — highest priority: who, what, where, and a medical flag.
+  static String sos(String family, String senderName, String id, String type,
+          double? lat, double? lng, String medical) =>
+      jsonEncode({
+        'f': family,
+        'k': 'sos',
+        'i': id,
+        'n': senderName,
+        'st': type,
+        'lat': lat,
+        'lng': lng,
+        'med': medical,
+      });
 
   /// Decode a payload. Falls back to a chat envelope for raw / legacy text.
   static MeshEnvelope decode(String raw) {
@@ -70,6 +90,17 @@ class MeshEnvelope {
           );
         case 'ping':
           return MeshEnvelope(kind: MeshKind.ping, familyCode: family, senderName: name);
+        case 'sos':
+          return MeshEnvelope(
+            kind: MeshKind.sos,
+            familyCode: family,
+            senderName: name,
+            sosId: m['i']?.toString() ?? '',
+            sosType: m['st']?.toString() ?? 'Emergency',
+            medical: m['med']?.toString() ?? '',
+            lat: (m['lat'] as num?)?.toDouble(),
+            lng: (m['lng'] as num?)?.toDouble(),
+          );
         default:
           return MeshEnvelope(kind: MeshKind.unknown, familyCode: family, senderName: name);
       }
