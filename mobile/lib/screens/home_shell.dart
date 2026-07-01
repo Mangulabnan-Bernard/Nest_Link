@@ -17,18 +17,19 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> {
   int _index = 0;
 
-  static const _tabs = [
-    HomeScreen(),
-    ChirpChatScreen(),
-    NestMatScreen(),
-    SafeFlightScreen(),
-    MeScreen(),
-  ];
+  void _go(int i) => setState(() => _index = i);
 
   @override
   Widget build(BuildContext context) {
+    final tabs = [
+      HomeScreen(onNavigate: _go),
+      const ChirpChatScreen(),
+      const NestMatScreen(),
+      const SafeFlightScreen(),
+      const MeScreen(),
+    ];
     return Scaffold(
-      body: IndexedStack(index: _index, children: _tabs),
+      body: IndexedStack(index: _index, children: tabs),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
         onDestinationSelected: (i) => setState(() => _index = i),
